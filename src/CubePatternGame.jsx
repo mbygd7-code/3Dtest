@@ -511,12 +511,15 @@ export default function CubePatternGame() {
   // ─── Auth state ───
   const [user, setUser] = useState(null); // Supabase user object
   const [nickname, setNickname] = useState("");
-  const [authMode, setAuthMode] = useState("login"); // "login" | "signup"
+  const [authMode, setAuthMode] = useState("login"); // "login" | "signup" | "forgot" | "reset"
   const [authLoading, setAuthLoading] = useState(true); // true while checking session
   const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState(""); // success message (e.g. reset email sent)
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [authNickname, setAuthNickname] = useState("");
+  const [authNewPassword, setAuthNewPassword] = useState(""); // for password reset
+  const [authConfirmPassword, setAuthConfirmPassword] = useState(""); // for password reset confirm
 
   const [rotX, setRotX] = useState(-20);
   const [rotY, setRotY] = useState(30);
@@ -616,6 +619,14 @@ export default function CubePatternGame() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const u = session?.user || null;
       setUser(u);
+      if (_event === "PASSWORD_RECOVERY") {
+        // User clicked password reset link from email → show new password form
+        setAuthMode("reset");
+        setAuthError("");
+        setAuthSuccess("");
+        setAuthNewPassword("");
+        setAuthConfirmPassword("");
+      }
       if (u) {
         fetchNickname(u.id).then((n) => { if (n) setNickname(n); });
       } else {
@@ -685,6 +696,29 @@ export default function CubePatternGame() {
     setUser(null);
     setNickname("");
     setCognitiveHistory([]);
+  };
+  const handleForgotPassword = async () => {
+    if (!supabase) return;
+    if (!authEmail.trim()) { setAuthError("이메일을 입력해주세요"); return; }
+    setAuthLoading(true); setAuthError(""); setAuthSuccess("");
+    const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
+      redirectTo: window.location.origin,
+    });
+    setAuthLoading(false);
+    if (error) { setAuthError(error.message); return; }
+    setAuthSuccess("비밀번호 재설정 링크를 이메일로 보냈습니다. 이메일을 확인해주세요.");
+  };
+  const handleResetPassword = async () => {
+    if (!supabase) return;
+    if (authNewPassword.length < 6) { setAuthError("비밀번호는 6자 이상이어야 합니다"); return; }
+    if (authNewPassword !== authConfirmPassword) { setAuthError("비밀번호가 일치하지 않습니다"); return; }
+    setAuthLoading(true); setAuthError(""); setAuthSuccess("");
+    const { error } = await supabase.auth.updateUser({ password: authNewPassword });
+    setAuthLoading(false);
+    if (error) { setAuthError(error.message); return; }
+    setAuthSuccess("비밀번호가 변경되었습니다! 잠시 후 게임이 시작됩니다.");
+    setAuthNewPassword(""); setAuthConfirmPassword("");
+    setTimeout(() => { setAuthMode("login"); setAuthSuccess(""); }, 2000);
   };
 
   // ─── Timer cleanup on unmount ───
@@ -1088,7 +1122,7 @@ export default function CubePatternGame() {
     );
   }
 
-  if (!user && supabase) {
+  if ((!user && supabase) || authMode === "reset") {
     const inputStyle = {
       width: "100%", padding: "14px 16px", fontSize: 14, fontWeight: 500,
       fontFamily: "'Outfit', sans-serif",
@@ -1126,7 +1160,7 @@ export default function CubePatternGame() {
             fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center",
             marginBottom: 28, letterSpacing: 1,
           }}>
-            {authMode === "signup" ? "회원가입" : "로그인"}
+            {authMode === "signup" ? "회원가입" : authMode === "forgot" ? "비밀번호 재설정" : authMode === "reset" ? "새 비밀번호 설정" : "로그인"}
           </div>
 
           {/* Form */}
@@ -1140,21 +1174,45 @@ export default function CubePatternGame() {
                 onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
               />
             )}
-            <input
-              type="email" placeholder="이메일" value={authEmail}
-              onChange={(e) => setAuthEmail(e.target.value)}
-              style={inputStyle}
-              onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
-              onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
-            />
-            <input
-              type="password" placeholder="비밀번호 (6자 이상)" value={authPassword}
-              onChange={(e) => setAuthPassword(e.target.value)}
-              style={inputStyle}
-              onKeyDown={(e) => { if (e.key === "Enter") authMode === "signup" ? handleSignUp() : handleLogin(); }}
-              onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
-              onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
-            />
+            {(authMode === "login" || authMode === "signup" || authMode === "forgot") && (
+              <input
+                type="email" placeholder="이메일" value={authEmail}
+                onChange={(e) => setAuthEmail(e.target.value)}
+                style={inputStyle}
+                onKeyDown={(e) => { if (e.key === "Enter" && authMode === "forgot") handleForgotPassword(); }}
+                onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
+              />
+            )}
+            {(authMode === "login" || authMode === "signup") && (
+              <input
+                type="password" placeholder="비밀번호 (6자 이상)" value={authPassword}
+                onChange={(e) => setAuthPassword(e.target.value)}
+                style={inputStyle}
+                onKeyDown={(e) => { if (e.key === "Enter") authMode === "signup" ? handleSignUp() : handleLogin(); }}
+                onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
+              />
+            )}
+            {authMode === "reset" && (
+              <>
+                <input
+                  type="password" placeholder="새 비밀번호 (6자 이상)" value={authNewPassword}
+                  onChange={(e) => setAuthNewPassword(e.target.value)}
+                  style={inputStyle}
+                  onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
+                />
+                <input
+                  type="password" placeholder="비밀번호 확인" value={authConfirmPassword}
+                  onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                  style={inputStyle}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleResetPassword(); }}
+                  onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
+                  onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
+                />
+              </>
+            )}
           </div>
 
           {/* Error */}
@@ -1168,12 +1226,42 @@ export default function CubePatternGame() {
             </div>
           )}
 
+          {/* Success */}
+          {authSuccess && (
+            <div style={{
+              marginTop: 12, padding: "10px 14px", borderRadius: 10,
+              background: "rgba(76,217,100,0.1)", border: "1px solid rgba(76,217,100,0.2)",
+              color: "#4CD964", fontSize: 12, textAlign: "center",
+            }}>
+              {authSuccess}
+            </div>
+          )}
+
+          {/* Forgot password link (login mode only) */}
+          {authMode === "login" && (
+            <div style={{ marginTop: 8, textAlign: "right" }}>
+              <span
+                onClick={() => { setAuthMode("forgot"); setAuthError(""); setAuthSuccess(""); }}
+                style={{ color: "rgba(255,255,255,0.35)", cursor: "pointer", fontSize: 11, transition: "color 0.2s" }}
+                onMouseEnter={(e) => { e.target.style.color = "#C084FC"; }}
+                onMouseLeave={(e) => { e.target.style.color = "rgba(255,255,255,0.35)"; }}
+              >
+                비밀번호를 잊으셨나요?
+              </span>
+            </div>
+          )}
+
           {/* Submit button */}
           <button
-            onClick={authMode === "signup" ? handleSignUp : handleLogin}
+            onClick={
+              authMode === "signup" ? handleSignUp :
+              authMode === "forgot" ? handleForgotPassword :
+              authMode === "reset" ? handleResetPassword :
+              handleLogin
+            }
             disabled={authLoading}
             style={{
-              width: "100%", marginTop: 18, padding: "14px 0",
+              width: "100%", marginTop: authMode === "login" ? 10 : 18, padding: "14px 0",
               fontSize: 15, fontWeight: 700,
               fontFamily: "'Outfit', sans-serif",
               background: "linear-gradient(135deg, #C084FC, #818CF8)",
@@ -1186,7 +1274,7 @@ export default function CubePatternGame() {
             onMouseEnter={(e) => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 6px 28px rgba(192,132,252,0.4)"; }}
             onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "0 4px 20px rgba(192,132,252,0.3)"; }}
           >
-            {authMode === "signup" ? "회원가입" : "로그인"}
+            {authMode === "signup" ? "회원가입" : authMode === "forgot" ? "재설정 링크 보내기" : authMode === "reset" ? "비밀번호 변경" : "로그인"}
           </button>
 
           {/* Toggle mode */}
@@ -1198,23 +1286,32 @@ export default function CubePatternGame() {
               <>
                 계정이 없으신가요?{" "}
                 <span
-                  onClick={() => { setAuthMode("signup"); setAuthError(""); }}
+                  onClick={() => { setAuthMode("signup"); setAuthError(""); setAuthSuccess(""); }}
                   style={{ color: "#C084FC", cursor: "pointer", fontWeight: 600 }}
                 >
                   회원가입
                 </span>
               </>
-            ) : (
+            ) : authMode === "signup" ? (
               <>
                 이미 계정이 있으신가요?{" "}
                 <span
-                  onClick={() => { setAuthMode("login"); setAuthError(""); }}
+                  onClick={() => { setAuthMode("login"); setAuthError(""); setAuthSuccess(""); }}
                   style={{ color: "#C084FC", cursor: "pointer", fontWeight: 600 }}
                 >
                   로그인
                 </span>
               </>
-            )}
+            ) : (authMode === "forgot" || authMode === "reset") ? (
+              <>
+                <span
+                  onClick={() => { setAuthMode("login"); setAuthError(""); setAuthSuccess(""); }}
+                  style={{ color: "#C084FC", cursor: "pointer", fontWeight: 600 }}
+                >
+                  로그인으로 돌아가기
+                </span>
+              </>
+            ) : null}
           </div>
         </div>
       </div>
