@@ -1824,24 +1824,22 @@ export default function CubePatternGame() {
           {(gameState === "idle" || gameState === "gameover") && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                {cognitiveHistory.length > 0 && (
-                  <button
-                    onClick={() => setShowReport(true)}
-                    style={{
-                      padding: "10px 24px", fontSize: 13, fontWeight: 600,
-                      fontFamily: "'Outfit', sans-serif",
-                      background: "rgba(255,255,255,0.06)",
-                      color: "rgba(255,255,255,0.7)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 50, cursor: "pointer",
-                      letterSpacing: 1, transition: "all 0.3s",
-                      WebkitAppearance: "none",
-                      WebkitTapHighlightColor: "transparent",
-                    }}
-                  >
-                    📊 리포트
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowReport(true)}
+                  style={{
+                    padding: "10px 24px", fontSize: 13, fontWeight: 600,
+                    fontFamily: "'Outfit', sans-serif",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "rgba(255,255,255,0.7)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 50, cursor: "pointer",
+                    letterSpacing: 1, transition: "all 0.3s",
+                    WebkitAppearance: "none",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  📊 리포트
+                </button>
                 {rankings.length > 0 && (
                   <button
                     onClick={() => setShowRanking(true)}
@@ -2161,129 +2159,162 @@ export default function CubePatternGame() {
               <div style={{
                 fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center", marginBottom: 20,
               }}>
-                총 {metrics.totalSessions}회 훈련 기반 분석
+                {metrics.totalSessions > 0 ? `총 ${metrics.totalSessions}회 훈련 기반 분석` : "훈련 기록 없음"}
               </div>
 
-              {/* Overall Score Ring */}
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                gap: 16, marginBottom: 22,
-                padding: "16px 20px", borderRadius: 16,
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.06)",
-              }}>
-                <div style={{ position: "relative" }}>
-                  <ProgressRing value={overallScore} color="#C084FC" size={68} stroke={5} />
-                  <div style={{
-                    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 20, fontWeight: 800, color: "#C084FC",
-                  }}>
-                    {overallScore}
+              {/* Empty state */}
+              {metrics.totalSessions === 0 && (
+                <div style={{
+                  padding: "40px 20px", textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>🧠</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "rgba(255,255,255,0.7)" }}>
+                    아직 게임 기록이 없습니다
                   </div>
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
+                    게임을 플레이하면 인지 능력 분석 리포트가<br />이곳에 표시됩니다
+                  </div>
+                  <button
+                    onClick={() => setShowReport(false)}
+                    style={{
+                      marginTop: 24, padding: "12px 32px", fontSize: 13, fontWeight: 600,
+                      fontFamily: "'Outfit', sans-serif",
+                      background: "linear-gradient(135deg, #C084FC, #818CF8)",
+                      color: "#fff", border: "none", borderRadius: 12,
+                      cursor: "pointer",
+                      WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                    }}
+                  >
+                    게임 시작하기
+                  </button>
                 </div>
+              )}
+
+              {/* All metrics content — only when data exists */}
+              {metrics.totalSessions > 0 && (
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>종합 인지 점수</div>
-                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-                    {overallScore >= 65 ? "매우 우수" : overallScore >= 45 ? "양호" : overallScore >= 25 ? "보통" : "훈련 초기"}
-                  </div>
-                </div>
-              </div>
-
-              {/* Metric Cards with Sparklines */}
-              <div style={{
-                display: "flex", flexDirection: "column", gap: 8, marginBottom: 20,
-              }}>
-                {categories.map((cat) => {
-                  const val = metrics[cat.key];
-                  const trend = metrics[`${cat.key}Trend`];
-                  const improvement = getTrendImprovement(trend);
-                  return (
-                    <div key={cat.key} style={{
-                      display: "flex", alignItems: "center", gap: 10,
-                      padding: "10px 12px", borderRadius: 12,
-                      background: "rgba(255,255,255,0.02)",
-                      border: "1px solid rgba(255,255,255,0.05)",
-                    }}>
-                      <div style={{ position: "relative", flexShrink: 0 }}>
-                        <ProgressRing value={val} color={cat.color} size={42} stroke={3.5} />
-                        <div style={{
-                          position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 11, fontWeight: 700, color: cat.color,
-                        }}>
-                          {val}
-                        </div>
-                      </div>
-                      <div style={{ minWidth: 62 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2 }}>
-                          {cat.icon} {cat.label}
-                        </div>
-                        <div style={{
-                          fontSize: 10,
-                          color: improvement > 0 ? "#00C9A7" : improvement < 0 ? "#FF6B6B" : "rgba(255,255,255,0.3)",
-                          fontWeight: 600,
-                        }}>
-                          {improvement > 0 ? `▲ +${improvement}` : improvement < 0 ? `▼ ${improvement}` : "—"}
-                        </div>
-                      </div>
-                      <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-                        <Sparkline data={trend} color={cat.color} height={32} width={100} />
+                  {/* Overall Score Ring */}
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    gap: 16, marginBottom: 22,
+                    padding: "16px 20px", borderRadius: 16,
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                  }}>
+                    <div style={{ position: "relative" }}>
+                      <ProgressRing value={overallScore} color="#C084FC" size={68} stroke={5} />
+                      <div style={{
+                        position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 20, fontWeight: 800, color: "#C084FC",
+                      }}>
+                        {overallScore}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>종합 인지 점수</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+                        {overallScore >= 65 ? "매우 우수" : overallScore >= 45 ? "양호" : overallScore >= 25 ? "보통" : "훈련 초기"}
+                      </div>
+                    </div>
+                  </div>
 
-              {/* Prevention Score Bar */}
-              <div style={{
-                padding: "14px 16px", borderRadius: 14,
-                background: "linear-gradient(135deg, rgba(0,201,167,0.08) 0%, rgba(77,168,255,0.08) 100%)",
-                border: "1px solid rgba(0,201,167,0.15)",
-                marginBottom: 18,
-              }}>
-                <div style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8,
-                }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>🛡️ 인지장애 예방 기여도</span>
-                  <span style={{ fontSize: 16, fontWeight: 800, color: "#00C9A7" }}>{metrics.preventionScore}%</span>
-                </div>
-                <div style={{
-                  height: 6, borderRadius: 3,
-                  background: "rgba(255,255,255,0.06)",
-                  overflow: "hidden",
-                }}>
+                  {/* Metric Cards with Sparklines */}
                   <div style={{
-                    height: "100%", borderRadius: 3,
-                    background: "linear-gradient(90deg, #00C9A7, #4DA8FF)",
-                    width: `${metrics.preventionScore}%`,
-                    transition: "width 1s ease-out",
-                  }} />
-                </div>
-              </div>
+                    display: "flex", flexDirection: "column", gap: 8, marginBottom: 20,
+                  }}>
+                    {categories.map((cat) => {
+                      const val = metrics[cat.key];
+                      const trend = metrics[`${cat.key}Trend`];
+                      const improvement = getTrendImprovement(trend);
+                      return (
+                        <div key={cat.key} style={{
+                          display: "flex", alignItems: "center", gap: 10,
+                          padding: "10px 12px", borderRadius: 12,
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.05)",
+                        }}>
+                          <div style={{ position: "relative", flexShrink: 0 }}>
+                            <ProgressRing value={val} color={cat.color} size={42} stroke={3.5} />
+                            <div style={{
+                              position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              fontSize: 11, fontWeight: 700, color: cat.color,
+                            }}>
+                              {val}
+                            </div>
+                          </div>
+                          <div style={{ minWidth: 62 }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2 }}>
+                              {cat.icon} {cat.label}
+                            </div>
+                            <div style={{
+                              fontSize: 10,
+                              color: improvement > 0 ? "#00C9A7" : improvement < 0 ? "#FF6B6B" : "rgba(255,255,255,0.3)",
+                              fontWeight: 600,
+                            }}>
+                              {improvement > 0 ? `▲ +${improvement}` : improvement < 0 ? `▼ ${improvement}` : "—"}
+                            </div>
+                          </div>
+                          <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+                            <Sparkline data={trend} color={cat.color} height={32} width={100} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-              {/* Doctor's Comment */}
-              <div style={{
-                padding: "16px",
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.06)",
-              }}>
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-                }}>
-                  <span style={{ fontSize: 20 }}>🩺</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>전문가 소견</span>
+                  {/* Prevention Score Bar */}
+                  <div style={{
+                    padding: "14px 16px", borderRadius: 14,
+                    background: "linear-gradient(135deg, rgba(0,201,167,0.08) 0%, rgba(77,168,255,0.08) 100%)",
+                    border: "1px solid rgba(0,201,167,0.15)",
+                    marginBottom: 18,
+                  }}>
+                    <div style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8,
+                    }}>
+                      <span style={{ fontSize: 12, fontWeight: 600 }}>🛡️ 인지장애 예방 기여도</span>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: "#00C9A7" }}>{metrics.preventionScore}%</span>
+                    </div>
+                    <div style={{
+                      height: 6, borderRadius: 3,
+                      background: "rgba(255,255,255,0.06)",
+                      overflow: "hidden",
+                    }}>
+                      <div style={{
+                        height: "100%", borderRadius: 3,
+                        background: "linear-gradient(90deg, #00C9A7, #4DA8FF)",
+                        width: `${metrics.preventionScore}%`,
+                        transition: "width 1s ease-out",
+                      }} />
+                    </div>
+                  </div>
+
+                  {/* Doctor's Comment */}
+                  <div style={{
+                    padding: "16px",
+                    borderRadius: 14,
+                    background: "rgba(255,255,255,0.03)",
+                    border: "1px solid rgba(255,255,255,0.06)",
+                  }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+                    }}>
+                      <span style={{ fontSize: 20 }}>🩺</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>전문가 소견</span>
+                    </div>
+                    <p style={{
+                      fontSize: 12, lineHeight: 1.7,
+                      color: "rgba(255,255,255,0.55)",
+                      margin: 0,
+                      wordBreak: "keep-all",
+                    }}>
+                      {getDoctorComment()}
+                    </p>
+                  </div>
                 </div>
-                <p style={{
-                  fontSize: 12, lineHeight: 1.7,
-                  color: "rgba(255,255,255,0.55)",
-                  margin: 0,
-                  wordBreak: "keep-all",
-                }}>
-                  {getDoctorComment()}
-                </p>
-              </div>
+              )}
             </div>
           </div>
         );
