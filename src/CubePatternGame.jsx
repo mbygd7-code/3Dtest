@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { supabase } from "./supabaseClient";
 const FACE_COLORS = {
   front: "#FF3B5C",
   back: "#00C9A7",
@@ -17,11 +18,9 @@ const FACE_NAMES = {
 };
 const FACE_KEYS = ["front", "back", "top", "bottom", "left", "right"];
 
-const MODE_ICONS = { color: "🎨", number: "3", animal: "🐾", fruit: "🍎" };
+const MODE_ICONS = { color: "🎨", number: "3" };
 const FACE_CONTENT = {
   number: { front: "1", back: "2", top: "3", bottom: "4", left: "5", right: "6" },
-  animal: { front: "🐱", back: "🐶", top: "🐦", bottom: "🐟", left: "🐰", right: "🐻" },
-  fruit: { front: "🍎", back: "🍌", top: "🍇", bottom: "🍒", left: "🍓", right: "🍊" },
 };
 
 // Safari-compatible 3D style helpers
@@ -47,18 +46,191 @@ function calculateCompositeScore(score, timeMs, accuracy) {
   return Math.round((score + timeBonus) * accuracyMultiplier);
 }
 
-// ─── Ranking localStorage persistence ───
+// ─── Device ID for identifying this browser ───
+const DEVICE_ID_KEY = "cubePatternDeviceId";
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY);
+  if (!id) {
+    id = "dev_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+    localStorage.setItem(DEVICE_ID_KEY, id);
+  }
+  return id;
+}
+
+// ─── Ranking: local cache keys ───
 const RANKING_STORAGE_KEY = "cubePatternRankings";
 const MAX_RANKINGS = 10;
 
-function loadRankings() {
+function loadRankingsLocal() {
   try {
     const data = localStorage.getItem(RANKING_STORAGE_KEY);
     return data ? JSON.parse(data) : [];
   } catch { return []; }
 }
-function persistRankings(r) {
+function persistRankingsLocal(r) {
   try { localStorage.setItem(RANKING_STORAGE_KEY, JSON.stringify(r)); } catch {}
+}
+
+// ─── Supabase: Rankings ───
+async function fetchRankingsFromDB() {
+  if (!supabase) return loadRankingsLocal();
+  try {
+    const { data, error } = await supabase
+      .from("rankings")
+      .select("*, profiles(nickname)")
+      .order("composite_score", { ascending: false })
+      .limit(MAX_RANKINGS);
+    if (error) throw error;
+    return (data || []).map((r) => ({
+      score: r.score, level: r.level, time: r.time,
+      accuracy: r.accuracy, compositeScore: r.composite_score,
+      gameMode: r.game_mode, date: r.created_at,
+      playerName: r.profiles?.nickname || r.player_name || "익명",
+      userId: r.user_id,
+    }));
+  } catch {
+    return loadRankingsLocal();
+  }
+}
+async function insertRankingToDB(entry, userId) {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase.from("rankings").insert({
+      score: entry.score, level: entry.level, time: entry.time,
+      accuracy: entry.accuracy, composite_score: entry.compositeScore,
+      game_mode: entry.gameMode, player_name: entry.playerName || "익명",
+      user_id: userId,
+    });
+    if (error) throw error;
+  } catch {
+    // fallback: save locally only
+  }
+}
+
+// ─── Cognitive Report: local cache ───
+const COGNITIVE_STORAGE_KEY = "cubePatternCognitive";
+
+function loadCognitiveLocal() {
+  try {
+    const data = localStorage.getItem(COGNITIVE_STORAGE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch { return []; }
+}
+function persistCognitiveLocal(history) {
+  try { localStorage.setItem(COGNITIVE_STORAGE_KEY, JSON.stringify(history)); } catch {}
+}
+
+// ─── Supabase: Cognitive Sessions ───
+async function fetchCognitiveFromDB(userId) {
+  if (!supabase || !userId) return loadCognitiveLocal();
+  try {
+    const { data, error } = await supabase
+      .from("cognitive_sessions")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    return (data || []).map((s) => ({
+      score: s.score, level: s.level, time: s.time,
+      accuracy: s.accuracy, maxCombo: s.max_combo,
+      gameMode: s.game_mode, date: s.created_at,
+    }));
+  } catch {
+    return loadCognitiveLocal();
+  }
+}
+async function insertCognitiveToDB(session, userId) {
+  if (!supabase || !userId) return;
+  try {
+    const { error } = await supabase.from("cognitive_sessions").insert({
+      score: session.score, level: session.level, time: session.time,
+      accuracy: session.accuracy, max_combo: session.maxCombo,
+      game_mode: session.gameMode, user_id: userId,
+    });
+    if (error) throw error;
+  } catch {
+    // fallback: saved locally already
+  }
+}
+
+// ─── Supabase: Fetch user nickname ───
+async function fetchNickname(userId) {
+  if (!supabase || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("nickname")
+      .eq("id", userId)
+      .single();
+    if (error) throw error;
+    return data?.nickname || null;
+  } catch { return null; }
+}
+
+// ─── Cognitive metrics calculation ───
+function calculateCognitiveMetrics(history) {
+  if (!history || history.length === 0) {
+    return {
+      memory: 0, reaction: 0, pattern: 0, focus: 0, creativity: 0,
+      memoryTrend: [], reactionTrend: [], patternTrend: [], focusTrend: [], creativityTrend: [],
+      totalSessions: 0, preventionScore: 0,
+    };
+  }
+
+  const sessions = history.slice(-30); // Last 30 sessions for trends
+  const totalSessions = history.length;
+
+  // Calculate per-session metrics (normalized to 0-100)
+  const perSession = sessions.map((s) => {
+    const maxLevel = s.level || 1;
+    const accuracy = s.accuracy || 0;
+    const timeSec = Math.max((s.time || 0) / 1000, 1);
+    const score = s.score || 0;
+    const combo = s.maxCombo || 0;
+
+    // Memory: based on max level reached (higher level = longer pattern memorized)
+    const memory = Math.min(100, maxLevel * 12 + accuracy * 0.3);
+    // Reaction: faster completion = better (inverse of avg time per pattern)
+    const avgTimePerPattern = timeSec / Math.max(maxLevel, 1);
+    const reaction = Math.min(100, Math.max(10, 100 - avgTimePerPattern * 5));
+    // Pattern recognition: accuracy + level combo
+    const pattern = Math.min(100, accuracy * 0.6 + maxLevel * 6);
+    // Focus: consistency (high accuracy under time pressure)
+    const focus = Math.min(100, accuracy * 0.5 + (combo > 0 ? combo * 8 : 0) + (maxLevel > 3 ? 20 : maxLevel * 6));
+    // Creativity: mode variety + handling different pattern types
+    const modeBonus = s.gameMode === "number" ? 10 : 5;
+    const creativity = Math.min(100, score * 0.015 + modeBonus + maxLevel * 5);
+
+    return { memory, reaction, pattern, focus, creativity, date: s.date };
+  });
+
+  // Current values (average of last 5 sessions, or all if fewer)
+  const recent = perSession.slice(-5);
+  const avg = (arr, key) => arr.reduce((sum, s) => sum + s[key], 0) / arr.length;
+
+  const memory = Math.round(avg(recent, "memory"));
+  const reaction = Math.round(avg(recent, "reaction"));
+  const pattern = Math.round(avg(recent, "pattern"));
+  const focus = Math.round(avg(recent, "focus"));
+  const creativity = Math.round(avg(recent, "creativity"));
+
+  // Trends (for graph: last N sessions)
+  const memoryTrend = perSession.map((s) => Math.round(s.memory));
+  const reactionTrend = perSession.map((s) => Math.round(s.reaction));
+  const patternTrend = perSession.map((s) => Math.round(s.pattern));
+  const focusTrend = perSession.map((s) => Math.round(s.focus));
+  const creativityTrend = perSession.map((s) => Math.round(s.creativity));
+
+  // Prevention score: based on overall progress + consistency
+  const overallAvg = (memory + reaction + pattern + focus + creativity) / 5;
+  const sessionFactor = Math.min(1, totalSessions / 20); // reaches max weight at 20 sessions
+  const preventionScore = Math.min(95, Math.round(overallAvg * 0.6 * sessionFactor + totalSessions * 1.2));
+
+  return {
+    memory, reaction, pattern, focus, creativity,
+    memoryTrend, reactionTrend, patternTrend, focusTrend, creativityTrend,
+    totalSessions, preventionScore,
+  };
 }
 
 function generatePattern(length) {
@@ -336,6 +508,16 @@ function ColorDot({ faceKey, size = 36, showLabel = false, dim = false, pulse = 
   );
 }
 export default function CubePatternGame() {
+  // ─── Auth state ───
+  const [user, setUser] = useState(null); // Supabase user object
+  const [nickname, setNickname] = useState("");
+  const [authMode, setAuthMode] = useState("login"); // "login" | "signup"
+  const [authLoading, setAuthLoading] = useState(true); // true while checking session
+  const [authError, setAuthError] = useState("");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authNickname, setAuthNickname] = useState("");
+
   const [rotX, setRotX] = useState(-20);
   const [rotY, setRotY] = useState(30);
   const dragging = useRef(false);
@@ -358,6 +540,7 @@ export default function CubePatternGame() {
   const [highlightFace, setHighlightFace] = useState(null);
   const [lives, setLives] = useState(3);
   const [combo, setCombo] = useState(0);
+  const maxComboRef = useRef(0);
   const [bestScore, setBestScore] = useState(0);
   const [shakeAnim, setShakeAnim] = useState(false);
   const [cubeUnfolded, setCubeUnfolded] = useState(false);
@@ -366,6 +549,9 @@ export default function CubePatternGame() {
   const [gameMode, setGameMode] = useState("color");
   const [lidOpen, setLidOpen] = useState(false);
   const [droppingIcon, setDroppingIcon] = useState(null);
+  // Idle preview cube animation state
+  const [previewAnim, setPreviewAnim] = useState(null); // null | "zooming" | "lidOpen" | "dropping" | "lidClose" | "waiting" | "returning"
+  const [pendingMode, setPendingMode] = useState(null);
   // Timer
   const [elapsedTime, setElapsedTime] = useState(0);
   const timerRef = useRef(null);
@@ -376,6 +562,9 @@ export default function CubePatternGame() {
   // Rankings
   const [rankings, setRankings] = useState([]);
   const [showRanking, setShowRanking] = useState(false);
+  // Cognitive Report
+  const [showReport, setShowReport] = useState(false);
+  const [cognitiveHistory, setCognitiveHistory] = useState([]);
   // Round countdown (10s per question)
   const ROUND_TIME_LIMIT = 10000;
   const [roundTimeLeft, setRoundTimeLeft] = useState(ROUND_TIME_LIMIT);
@@ -411,12 +600,92 @@ export default function CubePatternGame() {
     if (roundTimeoutRef.current) { clearTimeout(roundTimeoutRef.current); roundTimeoutRef.current = null; }
   }, []);
 
-  // ─── Load rankings on mount ───
+  // ─── Auth: check session on mount + listen for changes ───
   useEffect(() => {
-    const stored = loadRankings();
-    setRankings(stored);
-    if (stored.length > 0) setBestScore(Math.max(...stored.map((r) => r.score)));
+    if (!supabase) { setAuthLoading(false); return; }
+    // Check existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const u = session?.user || null;
+      setUser(u);
+      setAuthLoading(false);
+      if (u) {
+        fetchNickname(u.id).then((n) => { if (n) setNickname(n); });
+      }
+    });
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const u = session?.user || null;
+      setUser(u);
+      if (u) {
+        fetchNickname(u.id).then((n) => { if (n) setNickname(n); });
+      } else {
+        setNickname("");
+      }
+    });
+    return () => subscription.unsubscribe();
   }, []);
+
+  // ─── Load rankings + cognitive history (after auth resolved) ───
+  useEffect(() => {
+    // Local cache first
+    const localRankings = loadRankingsLocal();
+    setRankings(localRankings);
+    if (localRankings.length > 0) setBestScore(Math.max(...localRankings.map((r) => r.score)));
+    const localCognitive = loadCognitiveLocal();
+    setCognitiveHistory(localCognitive);
+
+    // Fetch from Supabase
+    (async () => {
+      const dbRankings = await fetchRankingsFromDB();
+      if (dbRankings.length > 0) {
+        setRankings(dbRankings);
+        persistRankingsLocal(dbRankings);
+        setBestScore(Math.max(...dbRankings.map((r) => r.score)));
+      }
+      if (user) {
+        const dbCognitive = await fetchCognitiveFromDB(user.id);
+        if (dbCognitive.length > 0) {
+          setCognitiveHistory(dbCognitive);
+          persistCognitiveLocal(dbCognitive);
+        }
+      }
+    })();
+  }, [user]);
+
+  // ─── Auth handlers ───
+  const handleSignUp = async () => {
+    if (!supabase) return;
+    if (!authNickname.trim()) { setAuthError("닉네임을 입력해주세요"); return; }
+    if (!authEmail.trim()) { setAuthError("이메일을 입력해주세요"); return; }
+    if (authPassword.length < 6) { setAuthError("비밀번호는 6자 이상이어야 합니다"); return; }
+    setAuthLoading(true); setAuthError("");
+    const { error } = await supabase.auth.signUp({
+      email: authEmail.trim(),
+      password: authPassword,
+      options: { data: { nickname: authNickname.trim() } },
+    });
+    setAuthLoading(false);
+    if (error) { setAuthError(error.message); return; }
+    setNickname(authNickname.trim());
+  };
+  const handleLogin = async () => {
+    if (!supabase) return;
+    if (!authEmail.trim() || !authPassword) { setAuthError("이메일과 비밀번호를 입력해주세요"); return; }
+    setAuthLoading(true); setAuthError("");
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+    setAuthLoading(false);
+    if (error) { setAuthError(error.message === "Invalid login credentials" ? "이메일 또는 비밀번호가 틀렸습니다" : error.message); }
+  };
+  const handleLogout = async () => {
+    if (!supabase) return;
+    await supabase.auth.signOut();
+    setUser(null);
+    setNickname("");
+    setCognitiveHistory([]);
+  };
 
   // ─── Timer cleanup on unmount ───
   useEffect(() => {
@@ -451,10 +720,12 @@ export default function CubePatternGame() {
     setLevel(1);
     setLives(3);
     setCombo(0);
+    maxComboRef.current = 0;
     setTotalAttempts(0);
     setCorrectAttempts(0);
     resetTimer();
     setShowRanking(false);
+    setShowReport(false);
     setRotX(-20);
     setRotY(30);
     setGameState("folding");
@@ -473,26 +744,46 @@ export default function CubePatternGame() {
   const handleModeSelect = (mode) => {
     if (mode === gameMode) return;
     if (gameState === "folding" || gameState === "lidAnim") return;
-    const wasPlaying = gameState !== "idle" && gameState !== "gameover";
-    if (wasPlaying) resetTimer();
-    // Phase 1: lid animation (no overlay — cube visible)
+    if (previewAnim) return; // prevent double-click during animation
+
+    // For gameover: just change mode directly (no preview cube visible)
+    if (gameState === "gameover") {
+      setGameMode(mode);
+      return;
+    }
+    // For idle: animate preview cube in-place
+    if (gameState === "idle") {
+      setPendingMode(mode);
+      setPreviewAnim("zooming"); // zoom in (0.4s)
+      setTimeout(() => setPreviewAnim("lidOpen"), 400); // lid opens (0.5s transition)
+      setTimeout(() => setPreviewAnim("dropping"), 900); // icon drops (0.7s)
+      setTimeout(() => {
+        setGameMode(mode);
+        setPreviewAnim("lidClose"); // lid closes (0.5s transition)
+      }, 1600);
+      setTimeout(() => setPreviewAnim("waiting"), 2100); // wait 1s
+      setTimeout(() => setPreviewAnim("returning"), 3100); // zoom out (0.5s)
+      setTimeout(() => { setPreviewAnim(null); setPendingMode(null); }, 3600); // done
+      return;
+    }
+
+    // For during gameplay
+    const wasPlaying = true;
+    resetTimer();
     setGameState("lidAnim");
     setMessage("");
     setLidOpen(true);
-    // Phase 2: icon drops into cube
     setTimeout(() => setDroppingIcon(MODE_ICONS[mode]), 800);
-    // Phase 3: close lid, set new mode
     setTimeout(() => {
       setLidOpen(false);
       setDroppingIcon(null);
       setGameMode(mode);
     }, 2000);
-    // Phase 4: show start button (inline if was playing, overlay if from idle)
     setTimeout(() => {
       setGlowEdges(false);
       setEdgeBreathing(false);
-      setGameState(wasPlaying ? "modeReady" : "idle");
-      setMessage(wasPlaying ? "모드가 변경되었습니다!" : "");
+      setGameState("modeReady");
+      setMessage("모드가 변경되었습니다!");
     }, 2600);
   };
   const startRound = (lvl) => {
@@ -545,14 +836,39 @@ export default function CubePatternGame() {
           setEdgeBreathing(false);
           setMessage(`게임 오버! 최종 스코어: ${score}`);
           if (score > bestScore) setBestScore(score);
-          // Save ranking
+          // Save ranking (local + Supabase)
           const finalAcc = totalAttempts + 1 > 0 ? Math.round((correctAttempts / (totalAttempts + 1)) * 100) : 0;
           const composite = calculateCompositeScore(score, elapsedTime, finalAcc);
-          const entry = { score, level, time: elapsedTime, accuracy: finalAcc, compositeScore: composite, gameMode, date: new Date().toISOString() };
-          const updated = [...loadRankings(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
-          persistRankings(updated);
+          const entry = { score, level, time: elapsedTime, accuracy: finalAcc, compositeScore: composite, gameMode, playerName: nickname || "익명", date: new Date().toISOString() };
+          // Local cache update
+          const updated = [...loadRankingsLocal(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
+          persistRankingsLocal(updated);
           setRankings(updated);
           setBestScore(Math.max(score, bestScore));
+          // Supabase insert (async, non-blocking)
+          const uid = user?.id;
+          insertRankingToDB(entry, uid).then(() => {
+            fetchRankingsFromDB().then((dbRankings) => {
+              if (dbRankings.length > 0) {
+                setRankings(dbRankings);
+                persistRankingsLocal(dbRankings);
+              }
+            });
+          });
+          // Save cognitive session (local + Supabase)
+          const cogSession = { score, level, time: elapsedTime, accuracy: finalAcc, maxCombo: maxComboRef.current, gameMode, date: new Date().toISOString() };
+          const localHistory = loadCognitiveLocal();
+          localHistory.push(cogSession);
+          persistCognitiveLocal(localHistory);
+          setCognitiveHistory(localHistory);
+          insertCognitiveToDB(cogSession, uid).then(() => {
+            fetchCognitiveFromDB(uid).then((dbCognitive) => {
+              if (dbCognitive.length > 0) {
+                setCognitiveHistory(dbCognitive);
+                persistCognitiveLocal(dbCognitive);
+              }
+            });
+          });
         } else {
           setMessage(`틀렸어요! ❤️ ${newLives}개 남음 — 다시 보여줄게요`);
           setPlayerInput([]);
@@ -567,6 +883,7 @@ export default function CubePatternGame() {
       if (newInput.length === pattern.length) {
         const newCombo = combo + 1;
         setCombo(newCombo);
+        if (newCombo > maxComboRef.current) maxComboRef.current = newCombo;
         const bonus = newCombo >= 3 ? 50 : newCombo >= 2 ? 20 : 0;
         const earned = level * 100 + bonus;
         const newScore = score + earned;
@@ -606,11 +923,24 @@ export default function CubePatternGame() {
       if (score > bestScore) setBestScore(score);
       const finalAcc = totalAttempts + 1 > 0 ? Math.round((correctAttempts / (totalAttempts + 1)) * 100) : 0;
       const composite = calculateCompositeScore(score, elapsedTime, finalAcc);
-      const entry = { score, level, time: elapsedTime, accuracy: finalAcc, compositeScore: composite, gameMode, date: new Date().toISOString() };
-      const updated = [...loadRankings(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
-      persistRankings(updated);
+      const entry = { score, level, time: elapsedTime, accuracy: finalAcc, compositeScore: composite, gameMode, playerName: nickname || "익명", date: new Date().toISOString() };
+      // Local cache update
+      const updated = [...loadRankingsLocal(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
+      persistRankingsLocal(updated);
       setRankings(updated);
       setBestScore(Math.max(score, bestScore));
+      const uid2 = user?.id;
+      insertRankingToDB(entry, uid2).then(() => {
+        fetchRankingsFromDB().then((dbR) => { if (dbR.length > 0) { setRankings(dbR); persistRankingsLocal(dbR); } });
+      });
+      const cogSession = { score, level, time: elapsedTime, accuracy: finalAcc, maxCombo: maxComboRef.current, gameMode, date: new Date().toISOString() };
+      const localH = loadCognitiveLocal();
+      localH.push(cogSession);
+      persistCognitiveLocal(localH);
+      setCognitiveHistory(localH);
+      insertCognitiveToDB(cogSession, uid2).then(() => {
+        fetchCognitiveFromDB(uid2).then((dbC) => { if (dbC.length > 0) { setCognitiveHistory(dbC); persistCognitiveLocal(dbC); } });
+      });
     } else {
       setMessage(`⏰ 시간 초과! ❤️ ${newLives}개 남음 — 다시 보여줄게요`);
       setPlayerInput([]);
@@ -746,6 +1076,151 @@ export default function CubePatternGame() {
     };
   }, [handleTouchMove, handleTouchEnd]);
 
+  // ─── AUTH SCREEN ───
+  if (authLoading) {
+    return (
+      <div style={{
+        minHeight: "100vh", background: "linear-gradient(145deg, #0a0a1a 0%, #1a1a3e 40%, #0d0d2b 100%)",
+        display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Outfit', sans-serif",
+      }}>
+        <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 14 }}>로딩 중...</div>
+      </div>
+    );
+  }
+
+  if (!user && supabase) {
+    const inputStyle = {
+      width: "100%", padding: "14px 16px", fontSize: 14, fontWeight: 500,
+      fontFamily: "'Outfit', sans-serif",
+      background: "rgba(255,255,255,0.06)", color: "#fff",
+      border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12,
+      outline: "none", transition: "border-color 0.2s",
+      boxSizing: "border-box",
+    };
+    return (
+      <div style={{
+        minHeight: "100vh", background: "linear-gradient(145deg, #0a0a1a 0%, #1a1a3e 40%, #0d0d2b 100%)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontFamily: "'Outfit', sans-serif", padding: 20,
+      }}>
+        <div style={{
+          width: "100%", maxWidth: 360,
+          padding: "36px 28px 28px",
+          background: "linear-gradient(160deg, rgba(26,26,50,0.98) 0%, rgba(15,15,40,0.98) 100%)",
+          borderRadius: 24,
+          border: "1px solid rgba(255,255,255,0.08)",
+          boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
+          animation: "modalFadeIn 0.4s cubic-bezier(0.34, 1.3, 0.64, 1)",
+        }}>
+          {/* Logo */}
+          <div style={{ textAlign: "center", marginBottom: 8 }}>
+            <div style={{ fontSize: 36, marginBottom: 4 }}>🧊</div>
+            <div style={{
+              fontSize: 22, fontWeight: 800, color: "#fff",
+              letterSpacing: 2, lineHeight: 1.2,
+            }}>
+              CUBE PATTERN
+            </div>
+          </div>
+          <div style={{
+            fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center",
+            marginBottom: 28, letterSpacing: 1,
+          }}>
+            {authMode === "signup" ? "회원가입" : "로그인"}
+          </div>
+
+          {/* Form */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {authMode === "signup" && (
+              <input
+                type="text" placeholder="닉네임" value={authNickname}
+                onChange={(e) => setAuthNickname(e.target.value)}
+                style={inputStyle}
+                onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
+                onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
+              />
+            )}
+            <input
+              type="email" placeholder="이메일" value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              style={inputStyle}
+              onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
+              onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
+            />
+            <input
+              type="password" placeholder="비밀번호 (6자 이상)" value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              style={inputStyle}
+              onKeyDown={(e) => { if (e.key === "Enter") authMode === "signup" ? handleSignUp() : handleLogin(); }}
+              onFocus={(e) => { e.target.style.borderColor = "rgba(192,132,252,0.5)"; }}
+              onBlur={(e) => { e.target.style.borderColor = "rgba(255,255,255,0.12)"; }}
+            />
+          </div>
+
+          {/* Error */}
+          {authError && (
+            <div style={{
+              marginTop: 12, padding: "10px 14px", borderRadius: 10,
+              background: "rgba(255,59,92,0.1)", border: "1px solid rgba(255,59,92,0.2)",
+              color: "#FF6B6B", fontSize: 12, textAlign: "center",
+            }}>
+              {authError}
+            </div>
+          )}
+
+          {/* Submit button */}
+          <button
+            onClick={authMode === "signup" ? handleSignUp : handleLogin}
+            disabled={authLoading}
+            style={{
+              width: "100%", marginTop: 18, padding: "14px 0",
+              fontSize: 15, fontWeight: 700,
+              fontFamily: "'Outfit', sans-serif",
+              background: "linear-gradient(135deg, #C084FC, #818CF8)",
+              color: "#fff", border: "none", borderRadius: 14,
+              cursor: "pointer", letterSpacing: 1,
+              boxShadow: "0 4px 20px rgba(192,132,252,0.3)",
+              transition: "transform 0.2s, box-shadow 0.2s",
+              WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+            }}
+            onMouseEnter={(e) => { e.target.style.transform = "scale(1.02)"; e.target.style.boxShadow = "0 6px 28px rgba(192,132,252,0.4)"; }}
+            onMouseLeave={(e) => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "0 4px 20px rgba(192,132,252,0.3)"; }}
+          >
+            {authMode === "signup" ? "회원가입" : "로그인"}
+          </button>
+
+          {/* Toggle mode */}
+          <div style={{
+            marginTop: 18, textAlign: "center", fontSize: 12,
+            color: "rgba(255,255,255,0.4)",
+          }}>
+            {authMode === "login" ? (
+              <>
+                계정이 없으신가요?{" "}
+                <span
+                  onClick={() => { setAuthMode("signup"); setAuthError(""); }}
+                  style={{ color: "#C084FC", cursor: "pointer", fontWeight: 600 }}
+                >
+                  회원가입
+                </span>
+              </>
+            ) : (
+              <>
+                이미 계정이 있으신가요?{" "}
+                <span
+                  onClick={() => { setAuthMode("login"); setAuthError(""); }}
+                  style={{ color: "#C084FC", cursor: "pointer", fontWeight: 600 }}
+                >
+                  로그인
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -783,6 +1258,32 @@ export default function CubePatternGame() {
           0%, 100% { transform: translateY(0px); }
           50% { transform: translateY(-8px); }
         }
+        @keyframes idleSpin {
+          0% { transform: rotateX(-25deg) rotateY(0deg); }
+          100% { transform: rotateX(-25deg) rotateY(360deg); }
+        }
+        @keyframes previewZoomIn {
+          0% { transform: rotateX(-25deg) rotateY(0deg) scale(1); }
+          100% { transform: rotateX(-15deg) rotateY(0deg) scale(1.6); }
+        }
+        @keyframes previewDropIcon {
+          0% { transform: translate(-50%, -50%) translateY(-100px) scale(1.5) rotateZ(-10deg); opacity: 0; }
+          12% { opacity: 1; }
+          40% { transform: translate(-50%, -50%) translateY(-25px) scale(1.1) rotateZ(0deg); opacity: 1; }
+          65% { transform: translate(-50%, -50%) translateY(5px) scale(0.7) rotateZ(3deg); opacity: 0.85; }
+          85% { transform: translate(-50%, -50%) translateY(15px) scale(0.3) rotateZ(0deg); opacity: 0.4; }
+          100% { transform: translate(-50%, -50%) translateY(25px) scale(0.1); opacity: 0; }
+        }
+        @keyframes previewZoomOut {
+          0% { transform: rotateX(-15deg) rotateY(0deg) scale(1.6); }
+          100% { transform: rotateX(-25deg) rotateY(0deg) scale(1); }
+        }
+        @keyframes faceEdgeShine {
+          0%, 100% { opacity: 0.9; }
+          8% { opacity: 0.4; }
+          16%, 84% { opacity: 0; }
+          92% { opacity: 0.4; }
+        }
         @keyframes glow {
           0%, 100% { opacity: 0.3; }
           50% { opacity: 0.6; }
@@ -810,6 +1311,14 @@ export default function CubePatternGame() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
+        @keyframes modalFadeIn {
+          0% { opacity: 0; transform: scale(0.92); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes modalBackdropIn {
+          0% { opacity: 0; }
+          100% { opacity: 1; }
+        }
       `}</style>
       {/* Background orbs */}
       <div style={{
@@ -822,31 +1331,63 @@ export default function CubePatternGame() {
         background: "radial-gradient(circle, rgba(77,168,255,0.08) 0%, transparent 70%)",
         borderRadius: "50%", pointerEvents: "none", animation: "glow 5s ease-in-out infinite 1s",
       }} />
-      {/* Header */}
-      <div style={{
-        width: "100%", maxWidth: 500, padding: "24px 20px 0",
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        position: "relative", zIndex: 10,
-      }}>
-        <div>
-          <div style={{ fontSize: 11, letterSpacing: 3, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 4 }}>
-            CUBE PATTERN
+      {/* User info bar */}
+      {nickname && (
+        <div style={{
+          position: "absolute", top: 12, right: 16, zIndex: 20,
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <span style={{
+            fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 500,
+          }}>
+            👤 {nickname}
+          </span>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: "4px 10px", fontSize: 10, fontWeight: 600,
+              fontFamily: "'Outfit', sans-serif",
+              background: "rgba(255,255,255,0.06)",
+              color: "rgba(255,255,255,0.4)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 20, cursor: "pointer",
+              transition: "all 0.2s",
+              WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+            }}
+            onMouseEnter={(e) => { e.target.style.color = "#fff"; e.target.style.background = "rgba(255,255,255,0.1)"; }}
+            onMouseLeave={(e) => { e.target.style.color = "rgba(255,255,255,0.4)"; e.target.style.background = "rgba(255,255,255,0.06)"; }}
+          >
+            로그아웃
+          </button>
+        </div>
+      )}
+      {/* Header — only shown on non-gameplay screens */}
+      {(gameState === "idle" || gameState === "gameover" || gameState === "folding" || gameState === "lidAnim") && (
+        <div style={{
+          width: "100%", maxWidth: 500, padding: "24px 20px 0",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          position: "relative", zIndex: 10,
+        }}>
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: 3, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 4 }}>
+              CUBE PATTERN
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: -1 }}>
+              패턴 매칭
+            </div>
           </div>
-          <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: -1 }}>
-            패턴 매칭
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: 2 }}>BEST</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>{bestScore}</div>
           </div>
         </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: 2 }}>BEST</div>
-          <div style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>{bestScore}</div>
-        </div>
-      </div>
-      {/* Mode selector - visible during gameplay, clickable */}
-      {gameState !== "idle" && gameState !== "gameover" && gameState !== "folding" && gameState !== "lidAnim" && (
+      )}
+      {/* Mode selector — only visible on modeReady screen */}
+      {gameState === "modeReady" && (
         <div style={{
           display: "flex", gap: 8, padding: "10px 20px 0", position: "relative", zIndex: 10,
         }}>
-          {["color", "number", "animal", "fruit"].map((mode) => (
+          {["color", "number"].map((mode) => (
             <button
               key={mode}
               onClick={() => handleModeSelect(mode)}
@@ -868,160 +1409,186 @@ export default function CubePatternGame() {
           ))}
         </div>
       )}
-      {/* Stats bar */}
-      {gameState !== "idle" && gameState !== "gameover" && gameState !== "folding" && gameState !== "lidAnim" && gameState !== "modeReady" && (
-        <div style={{
-          display: "flex", gap: 16, padding: "16px 20px", maxWidth: 520, width: "100%",
-          justifyContent: "center", position: "relative", zIndex: 10, alignItems: "center",
-        }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>LEVEL</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{level}</div>
-          </div>
-          <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>SCORE</div>
-            <div style={{ fontSize: 22, fontWeight: 700 }}>{score}</div>
-          </div>
-          <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>TIME</div>
-            <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatTime(elapsedTime)}</div>
-          </div>
-          <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>LIVES</div>
-            <div style={{ fontSize: 18, fontWeight: 700 }}>
-              {"❤️".repeat(lives)}{"🖤".repeat(Math.max(0, 3 - lives))}
-            </div>
-          </div>
-          <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>ACC</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: accuracy === 100 ? "#00C9A7" : "#fff" }}>{accuracy}%</div>
-          </div>
-          {combo >= 2 && (
-            <>
-              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 10, color: "#FFD93D", letterSpacing: 2, marginBottom: 2 }}>COMBO</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: "#FFD93D" }}>×{combo}</div>
-              </div>
-            </>
-          )}
+      {/* 3D Cube area — always vertically centered */}
+      {/* Outer wrapper handles centering (never animated) */}
+      <div style={{
+        position: "absolute", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "100%", maxWidth: 500, height: 320,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 10, overflow: "visible",
+        pointerEvents: "none",
+      }}>
+        {/* Inner wrapper handles animation + pointer events */}
+        <div
+          onPointerDown={handlePointerDown}
+          onTouchStart={handleTouchStart}
+          style={{
+            width: "100%", height: "100%",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "grab", touchAction: "none", WebkitTouchCallout: "none",
+            pointerEvents: "auto",
+            animation: shakeAnim ? "shake 0.5s ease-in-out" : (gameState === "idle" ? "float 3s ease-in-out infinite" : "none"),
+          }}
+        >
+          <Cube3D
+            rotX={rotX}
+            rotY={rotY}
+            onFaceClick={handleFaceClick}
+            highlightFace={highlightFace}
+            scale={1.7}
+            unfolded={cubeUnfolded}
+            glowEdges={glowEdges}
+            edgeBreathing={edgeBreathing}
+            gameMode={gameMode}
+            lidOpen={lidOpen}
+            droppingIcon={droppingIcon}
+          />
         </div>
-      )}
-      {/* Pattern display */}
+      </div>
+      {/* ═══ Game HUD — always visible during active gameplay (no fade transitions) ═══ */}
       {gameState !== "idle" && gameState !== "gameover" && gameState !== "folding" && gameState !== "lidAnim" && gameState !== "modeReady" && (
-        <div style={{
-          display: "flex", gap: 10, padding: "12px 20px",
-          background: "rgba(255,255,255,0.03)",
-          borderRadius: 16, border: "1px solid rgba(255,255,255,0.06)",
-          margin: "8px 20px", flexWrap: "wrap", justifyContent: "center",
-          maxWidth: 460, position: "relative", zIndex: 10,
-        }}>
-          {pattern.map((fKey, i) => {
-            const isRevealed = gameState === "showing" && i <= showIndex;
-            const isPlayerFilled = gameState === "input" && i < playerInput.length;
-            const isCurrent = gameState === "input" && i === playerInput.length;
-            if (isRevealed) {
-              return <ColorDot key={i} faceKey={fKey} size={32} pulse gameMode={gameMode} />;
-            }
-            if (isPlayerFilled) {
-              return <ColorDot key={i} faceKey={playerInput[i]} size={32} pulse gameMode={gameMode} />;
-            }
-            return (
-              <div
-                key={i}
-                style={{
-                  width: 32, height: 32, borderRadius: "50%",
-                  background: isCurrent ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.05)",
-                  border: isCurrent ? "2px dashed rgba(255,255,255,0.4)" : "2px solid rgba(255,255,255,0.08)",
-                  transition: "all 0.3s",
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
-      {/* Round countdown bar */}
-      {gameState === "input" && (
-        <div style={{
-          maxWidth: 460, width: "calc(100% - 40px)", margin: "6px 20px 0",
-          position: "relative", zIndex: 10,
-          display: "flex", alignItems: "center", gap: 10,
-        }}>
+        <>
+          {/* TOP: Pattern display — fixed at top */}
           <div style={{
-            flex: 1, height: 6, borderRadius: 3,
-            background: "rgba(255,255,255,0.08)",
-            overflow: "hidden",
+            position: "absolute", top: 16, left: 0, right: 0,
+            display: "flex", flexDirection: "column", alignItems: "center",
+            zIndex: 30, pointerEvents: "none",
           }}>
             <div style={{
-              height: "100%", borderRadius: 3,
-              width: `${(roundTimeLeft / ROUND_TIME_LIMIT) * 100}%`,
-              background: roundTimeLeft > 5000
-                ? "linear-gradient(90deg, #00C9A7, #4DA8FF)"
-                : roundTimeLeft > 3000
-                  ? "linear-gradient(90deg, #FFD93D, #FF8A5C)"
-                  : "linear-gradient(90deg, #FF3B5C, #FF3B5C)",
-              transition: "width 0.05s linear",
-              boxShadow: roundTimeLeft <= 3000
-                ? "0 0 10px rgba(255,59,92,0.6)"
-                : "none",
-            }} />
+              display: "flex", gap: 14, padding: "16px 24px",
+              background: "rgba(10,10,26,0.75)",
+              backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+              borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)",
+              flexWrap: "wrap", justifyContent: "center",
+              maxWidth: 500,
+            }}>
+              {pattern.map((fKey, i) => {
+                const isRevealed = gameState === "showing" && i <= showIndex;
+                const isPlayerFilled = gameState === "input" && i < playerInput.length;
+                const isCurrent = gameState === "input" && i === playerInput.length;
+                if (isRevealed) {
+                  return <ColorDot key={i} faceKey={fKey} size={64} pulse gameMode={gameMode} />;
+                }
+                if (isPlayerFilled) {
+                  return <ColorDot key={i} faceKey={playerInput[i]} size={64} pulse gameMode={gameMode} />;
+                }
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      width: 64, height: 64, borderRadius: "50%",
+                      background: isCurrent ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.05)",
+                      border: isCurrent ? "2px dashed rgba(255,255,255,0.4)" : "2px solid rgba(255,255,255,0.08)",
+                      transition: "all 0.3s",
+                    }}
+                  />
+                );
+              })}
+            </div>
+            {/* Round countdown bar */}
+            {gameState === "input" && (
+              <div style={{
+                maxWidth: 500, width: "calc(100% - 40px)", marginTop: 8,
+                display: "flex", alignItems: "center", gap: 10,
+              }}>
+                <div style={{
+                  flex: 1, height: 6, borderRadius: 3,
+                  background: "rgba(255,255,255,0.08)",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%", borderRadius: 3,
+                    width: `${(roundTimeLeft / ROUND_TIME_LIMIT) * 100}%`,
+                    background: roundTimeLeft > 5000
+                      ? "linear-gradient(90deg, #00C9A7, #4DA8FF)"
+                      : roundTimeLeft > 3000
+                        ? "linear-gradient(90deg, #FFD93D, #FF8A5C)"
+                        : "linear-gradient(90deg, #FF3B5C, #FF3B5C)",
+                    transition: "width 0.05s linear",
+                    boxShadow: roundTimeLeft <= 3000
+                      ? "0 0 10px rgba(255,59,92,0.6)"
+                      : "none",
+                  }} />
+                </div>
+                <div style={{
+                  fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+                  color: roundTimeLeft > 5000 ? "rgba(255,255,255,0.5)"
+                    : roundTimeLeft > 3000 ? "#FFD93D"
+                    : "#FF3B5C",
+                  minWidth: 32, textAlign: "right",
+                  animation: roundTimeLeft <= 3000 ? "timerPulse 0.5s ease-in-out infinite" : "none",
+                }}>
+                  {Math.ceil(roundTimeLeft / 1000)}s
+                </div>
+              </div>
+            )}
           </div>
+          {/* BOTTOM: Stats bar — fixed at bottom, always visible */}
           <div style={{
-            fontSize: 14, fontWeight: 700, fontVariantNumeric: "tabular-nums",
-            color: roundTimeLeft > 5000 ? "rgba(255,255,255,0.5)"
-              : roundTimeLeft > 3000 ? "#FFD93D"
-              : "#FF3B5C",
-            minWidth: 32, textAlign: "right",
-            animation: roundTimeLeft <= 3000 ? "timerPulse 0.5s ease-in-out infinite" : "none",
+            position: "absolute", bottom: 24, left: 0, right: 0,
+            display: "flex", justifyContent: "center", alignItems: "center",
+            zIndex: 30, pointerEvents: "none",
           }}>
-            {Math.ceil(roundTimeLeft / 1000)}s
+            <div style={{
+              display: "flex", gap: 16, padding: "12px 24px",
+              background: "rgba(10,10,26,0.75)",
+              backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
+              borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)",
+              alignItems: "center",
+            }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>LV</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{level}</div>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>SCORE</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{score}</div>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>
+                  {"❤️".repeat(lives)}{"🖤".repeat(Math.max(0, 3 - lives))}
+                </div>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>TIME</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatTime(elapsedTime)}</div>
+              </div>
+              {combo >= 2 && (
+                <>
+                  <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 9, color: "#FFD93D", letterSpacing: 2, marginBottom: 2 }}>COMBO</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#FFD93D" }}>×{combo}</div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
+        </>
+      )}
+      {/* Message — only shown on non-gameplay screens (idle, modeReady, gameover transitions) */}
+      {(gameState === "idle" || gameState === "modeReady" || gameState === "gameover" || gameState === "folding" || gameState === "lidAnim") && (
+        <div style={{
+          padding: "12px 0", fontSize: 15, fontWeight: 400,
+          color: "rgba(255,255,255,0.7)", textAlign: "center",
+          minHeight: 44, display: "flex", alignItems: "center",
+          position: "relative", zIndex: 30,
+        }}>
+          {message}
         </div>
       )}
-      {/* Message */}
-      <div style={{
-        padding: "12px 0", fontSize: 15, fontWeight: 400,
-        color: "rgba(255,255,255,0.7)", textAlign: "center",
-        minHeight: 44, display: "flex", alignItems: "center",
-        position: "relative", zIndex: 10,
-      }}>
-        {message}
-      </div>
-      {/* 3D Cube area */}
-      <div
-        onPointerDown={handlePointerDown}
-        onTouchStart={handleTouchStart}
-        style={{
-          flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-          width: "100%", minHeight: 280, paddingBottom: 60, cursor: "grab",
-          touchAction: "none", WebkitTouchCallout: "none",
-          position: "relative", zIndex: 10,
-          animation: shakeAnim ? "shake 0.5s ease-in-out" : (gameState === "idle" ? "float 3s ease-in-out infinite" : "none"),
-        }}
-      >
-        <Cube3D
-          rotX={rotX}
-          rotY={rotY}
-          onFaceClick={handleFaceClick}
-          highlightFace={highlightFace}
-          scale={1.7}
-          unfolded={cubeUnfolded}
-          glowEdges={glowEdges}
-          edgeBreathing={edgeBreathing}
-          gameMode={gameMode}
-          lidOpen={lidOpen}
-          droppingIcon={droppingIcon}
-        />
-      </div>
+      {/* Spacer to push content below the centered cube */}
+      <div style={{ flex: 1 }} />
       {/* Inline start button — shown after mode switch during gameplay */}
       {gameState === "modeReady" && (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
-          position: "relative", zIndex: 20, marginTop: -40,
+          position: "absolute", bottom: "18%", left: "50%", transform: "translateX(-50%)",
+          zIndex: 20,
         }}>
           <button
             onClick={startGame}
@@ -1052,6 +1619,7 @@ export default function CubePatternGame() {
             : "rgba(10,10,26,0.85)",
           display: "flex", flexDirection: "column", alignItems: "center",
           justifyContent: "center", zIndex: 100,
+          paddingBottom: "12vh",
           backdropFilter: gameState === "folding" ? "none" : "blur(8px)",
           WebkitBackdropFilter: gameState === "folding" ? "none" : "blur(8px)",
           opacity: gameState === "folding" ? 0 : 1,
@@ -1086,7 +1654,7 @@ export default function CubePatternGame() {
             </div>
           )}
           {gameState === "idle" && (
-            <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ textAlign: "center", marginBottom: 16 }}>
               <div style={{ fontSize: 42, fontWeight: 800, marginBottom: 8, letterSpacing: -1 }}>
                 CUBE<br/>PATTERN
               </div>
@@ -1096,32 +1664,142 @@ export default function CubePatternGame() {
               </div>
             </div>
           )}
-          {/* How to play */}
-          {gameState === "idle" && (
-            <div style={{
-              display: "flex", gap: 20, marginBottom: 36, padding: "0 20px",
-            }}>
-              {[
-                { icon: "👀", text: "패턴 기억" },
-                { icon: "🔄", text: "큐브 회전" },
-                { icon: "👆", text: "면 터치" },
-              ].map((s, i) => (
-                <div key={i} style={{
-                  textAlign: "center", padding: "16px 12px",
-                  background: "rgba(255,255,255,0.04)",
-                  borderRadius: 12, border: "1px solid rgba(255,255,255,0.06)",
-                  minWidth: 80,
+          {/* Mini rotating cube preview */}
+          {gameState === "idle" && (() => {
+            const sz = 80;
+            const h = sz / 2;
+            // Cube container: CSS animation for spin/zoom, static transform for hold states
+            const cubeContainerStyle = (() => {
+              if (previewAnim === null) return { animation: "idleSpin 8s linear infinite" };
+              if (previewAnim === "zooming") return { animation: "previewZoomIn 0.4s ease-out forwards" };
+              if (previewAnim === "returning") return { animation: "previewZoomOut 0.5s ease-in-out forwards" };
+              // lidOpen, dropping, lidClose, waiting → hold zoomed position
+              return { transform: "rotateX(-15deg) rotateY(0deg) scale(1.6)" };
+            })();
+            // Lid open when lidOpen or dropping
+            const isLidOpen = previewAnim === "lidOpen" || previewAnim === "dropping";
+            const faceContent = (faceKey) => {
+              const c = FACE_CONTENT[gameMode]?.[faceKey];
+              if (!c) return null;
+              return <span style={{ fontSize: gameMode === "number" ? sz * 0.45 : sz * 0.5, fontWeight: gameMode === "number" ? 900 : 400, color: "rgba(0,0,0,0.5)", pointerEvents: "none" }}>{c}</span>;
+            };
+            const faceStyle = (bg, tf) => ({
+              position: "absolute", width: sz, height: sz,
+              background: bg, borderRadius: 6, transform: tf,
+              border: "1px solid rgba(255,255,255,0.15)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              overflow: "hidden",
+            });
+            // Light reflection overlay — synced with 8s idleSpin rotation
+            const shineOverlay = (delay) => (
+              <>
+                <div style={{
+                  position: "absolute", top: 0, left: 0, right: 0, height: "35%",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.04) 50%, transparent 100%)",
+                  borderRadius: "6px 6px 0 0", pointerEvents: "none",
+                  animation: `faceEdgeShine 8s linear ${delay}s infinite`,
+                }} />
+                <div style={{
+                  position: "absolute", top: 0, left: 0, right: 0, height: 1.5,
+                  background: "linear-gradient(90deg, transparent 5%, rgba(255,255,255,0.5) 30%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.5) 70%, transparent 95%)",
+                  pointerEvents: "none",
+                  animation: `faceEdgeShine 8s linear ${delay}s infinite`,
+                }} />
+              </>
+            );
+            return (
+              <div style={{
+                marginBottom: 48, marginTop: 24, perspective: "500px", WebkitPerspective: "500px",
+              }}>
+                <div style={{
+                  width: sz, height: sz, position: "relative",
+                  ...preserve3d,
+                  ...cubeContainerStyle,
                 }}>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>{s.icon}</div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.6)" }}>{s.text}</div>
+                  {/* Front — shines at 0°/360° */}
+                  <div style={faceStyle(FACE_COLORS.front, `translateZ(${h}px)`)}>
+                    {faceContent("front")}
+                    {shineOverlay(0)}
+                  </div>
+                  {/* Back — shines at 180° */}
+                  <div style={faceStyle(FACE_COLORS.back, `rotateY(180deg) translateZ(${h}px)`)}>
+                    {faceContent("back")}
+                    {shineOverlay(-4)}
+                  </div>
+                  {/* Top — lid with wrapper for hinge animation */}
+                  <div style={{
+                    position: "absolute", width: sz, height: sz,
+                    transform: `rotateX(90deg) translateZ(${h}px)`,
+                    ...preserve3d,
+                  }}>
+                    {/* Outer face of lid */}
+                    <div style={{
+                      width: sz, height: sz,
+                      background: FACE_COLORS.top, borderRadius: 6,
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      transformOrigin: "center top",
+                      transform: isLidOpen ? "rotateX(110deg)" : "rotateX(0deg)",
+                      transition: "transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94)",
+                      ...preserve3d,
+                    }}>
+                      {faceContent("top")}
+                      {/* Inner face of lid (dark) — visible when lid opens */}
+                      <div style={{
+                        position: "absolute", left: 0, top: 0, width: sz, height: sz,
+                        background: "linear-gradient(180deg, #1a1a2e 0%, #111128 100%)",
+                        transform: "rotateX(180deg)",
+                        ...hiddenBack,
+                        borderRadius: 6,
+                        border: "1px solid rgba(255,255,255,0.08)",
+                        boxShadow: "inset 0 0 15px rgba(0,0,0,0.5)",
+                      }} />
+                    </div>
+                  </div>
+                  {/* Bottom */}
+                  <div style={faceStyle(FACE_COLORS.bottom, `rotateX(-90deg) translateZ(${h}px)`)}>{faceContent("bottom")}</div>
+                  {/* Left — shines at 90° */}
+                  <div style={faceStyle(FACE_COLORS.left, `rotateY(-90deg) translateZ(${h}px)`)}>
+                    {faceContent("left")}
+                    {shineOverlay(-6)}
+                  </div>
+                  {/* Right — shines at 270° */}
+                  <div style={faceStyle(FACE_COLORS.right, `rotateY(90deg) translateZ(${h}px)`)}>
+                    {faceContent("right")}
+                    {shineOverlay(-2)}
+                  </div>
+                  {/* Dropping icon — falls into cube when mode is selected */}
+                  {previewAnim === "dropping" && pendingMode && (
+                    <div style={{
+                      position: "absolute",
+                      left: sz / 2, top: sz / 2,
+                      width: 0, height: 0,
+                      ...preserve3d,
+                      transform: `translateZ(${h * 0.5}px)`,
+                      pointerEvents: "none",
+                    }}>
+                      <div style={{
+                        position: "absolute",
+                        left: 0, top: 0,
+                        transform: "translate(-50%, -50%)",
+                        animation: "previewDropIcon 0.7s cubic-bezier(0.45, 0.05, 0.55, 0.95) forwards",
+                        fontSize: sz * 0.45,
+                        fontWeight: 900,
+                        filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.6))",
+                        lineHeight: 1,
+                      }}>
+                        {MODE_ICONS[pendingMode]}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            );
+          })()}
           {/* Mode selector inside overlay */}
           {(gameState === "idle" || gameState === "gameover") && (
-            <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
-              {["color", "number", "animal", "fruit"].map((mode) => (
+            <div style={{ display: "flex", gap: 10, marginBottom: 32 }}>
+              {["color", "number"].map((mode) => (
                 <button
                   key={mode}
                   onClick={(e) => { e.stopPropagation(); handleModeSelect(mode); }}
@@ -1144,7 +1822,45 @@ export default function CubePatternGame() {
             </div>
           )}
           {(gameState === "idle" || gameState === "gameover") && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                {cognitiveHistory.length > 0 && (
+                  <button
+                    onClick={() => setShowReport(true)}
+                    style={{
+                      padding: "10px 24px", fontSize: 13, fontWeight: 600,
+                      fontFamily: "'Outfit', sans-serif",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "rgba(255,255,255,0.7)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 50, cursor: "pointer",
+                      letterSpacing: 1, transition: "all 0.3s",
+                      WebkitAppearance: "none",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                  >
+                    📊 리포트
+                  </button>
+                )}
+                {rankings.length > 0 && (
+                  <button
+                    onClick={() => setShowRanking(true)}
+                    style={{
+                      padding: "10px 24px", fontSize: 13, fontWeight: 600,
+                      fontFamily: "'Outfit', sans-serif",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "rgba(255,255,255,0.7)",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      borderRadius: 50, cursor: "pointer",
+                      letterSpacing: 1, transition: "all 0.3s",
+                      WebkitAppearance: "none",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                  >
+                    🏆 랭킹
+                  </button>
+                )}
+              </div>
               <button
                 onClick={startGame}
                 style={{
@@ -1169,74 +1885,409 @@ export default function CubePatternGame() {
               >
                 {gameState === "gameover" ? "다시 도전" : "게임 시작"}
               </button>
-              {rankings.length > 0 && (
-                <button
-                  onClick={() => setShowRanking(!showRanking)}
-                  style={{
-                    padding: "10px 32px", fontSize: 13, fontWeight: 600,
-                    fontFamily: "'Outfit', sans-serif",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "rgba(255,255,255,0.7)",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    borderRadius: 50, cursor: "pointer",
-                    letterSpacing: 1, transition: "all 0.3s",
-                    WebkitAppearance: "none",
-                    WebkitTapHighlightColor: "transparent",
-                  }}
-                >
-                  {showRanking ? "닫기" : "🏆 랭킹 보기"}
-                </button>
-              )}
-            </div>
-          )}
-          {/* ─── RANKING TABLE ─── */}
-          {showRanking && rankings.length > 0 && (
-            <div style={{
-              marginTop: 16, padding: "16px 20px",
-              background: "rgba(255,255,255,0.04)",
-              borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)",
-              maxWidth: 440, width: "90%", maxHeight: 340, overflowY: "auto",
-            }}>
-              <div style={{ fontSize: 12, letterSpacing: 3, color: "rgba(255,255,255,0.4)", marginBottom: 14, textAlign: "center", fontWeight: 600 }}>
-                TOP RANKINGS
-              </div>
-              {/* Table header */}
-              <div style={{ display: "flex", padding: "0 12px 8px", fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1, borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: 6 }}>
-                <div style={{ width: 24 }}>#</div>
-                <div style={{ flex: 1 }}>SCORE</div>
-                <div style={{ width: 44, textAlign: "center" }}>LV</div>
-                <div style={{ width: 56, textAlign: "center" }}>TIME</div>
-                <div style={{ width: 44, textAlign: "center" }}>ACC</div>
-                <div style={{ width: 28, textAlign: "center" }}>MODE</div>
-                <div style={{ width: 70, textAlign: "right" }}>DATE</div>
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {rankings.map((entry, i) => (
-                  <div key={i} style={{
-                    display: "flex", alignItems: "center",
-                    padding: "8px 12px", borderRadius: 10,
-                    background: i === 0 ? "rgba(255,215,0,0.06)" : "rgba(255,255,255,0.015)",
-                    border: i < 3 ? "1px solid rgba(255,215,0,0.12)" : "1px solid rgba(255,255,255,0.04)",
-                    fontSize: 13,
-                  }}>
-                    <div style={{ width: 24, fontWeight: 700, color: i < 3 ? "#FFD93D" : "rgba(255,255,255,0.35)", fontSize: 14 }}>
-                      {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
-                    </div>
-                    <div style={{ flex: 1, fontWeight: 700 }}>{entry.score}<span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.4)", marginLeft: 2 }}>pts</span></div>
-                    <div style={{ width: 44, textAlign: "center", color: "rgba(255,255,255,0.6)" }}>{entry.level}</div>
-                    <div style={{ width: 56, textAlign: "center", fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.6)" }}>{formatTime(entry.time)}</div>
-                    <div style={{ width: 44, textAlign: "center", color: entry.accuracy === 100 ? "#00C9A7" : "rgba(255,255,255,0.6)" }}>{entry.accuracy}%</div>
-                    <div style={{ width: 28, textAlign: "center" }}>{MODE_ICONS[entry.gameMode] || "?"}</div>
-                    <div style={{ width: 70, textAlign: "right", fontSize: 10, color: "rgba(255,255,255,0.3)" }}>
-                      {new Date(entry.date).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>
       )}
+      {/* ─── RANKING MODAL POPUP ─── */}
+      {showRanking && rankings.length > 0 && (
+        <div
+          onClick={() => setShowRanking(false)}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(0,0,0,0.7)",
+            backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 999,
+            animation: "modalBackdropIn 0.25s ease-out",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative",
+              padding: "28px 24px 24px",
+              background: "linear-gradient(160deg, rgba(26,26,50,0.98) 0%, rgba(15,15,40,0.98) 100%)",
+              borderRadius: 20,
+              border: "1px solid rgba(255,255,255,0.1)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(77,168,255,0.08)",
+              maxWidth: 460, width: "92%",
+              maxHeight: "75vh",
+              display: "flex", flexDirection: "column",
+              animation: "modalFadeIn 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)",
+              fontFamily: "'Outfit', sans-serif",
+              color: "#fff",
+            }}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => setShowRanking(false)}
+              style={{
+                position: "absolute", top: 12, right: 12,
+                width: 32, height: 32, borderRadius: "50%",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                color: "rgba(255,255,255,0.6)",
+                fontSize: 16, fontWeight: 300,
+                cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.2s",
+                WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = "rgba(255,255,255,0.12)";
+                e.target.style.color = "#fff";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = "rgba(255,255,255,0.06)";
+                e.target.style.color = "rgba(255,255,255,0.6)";
+              }}
+            >
+              ✕
+            </button>
+            {/* Title */}
+            <div style={{
+              fontSize: 13, letterSpacing: 4, color: "rgba(255,255,255,0.4)",
+              marginBottom: 18, textAlign: "center", fontWeight: 600,
+            }}>
+              🏆 TOP RANKINGS
+            </div>
+            {/* Table header */}
+            <div style={{
+              display: "flex", padding: "0 12px 10px",
+              fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: 1,
+              borderBottom: "1px solid rgba(255,255,255,0.08)", marginBottom: 8,
+              flexShrink: 0,
+            }}>
+              <div style={{ width: 28 }}>#</div>
+              <div style={{ width: 60 }}>PLAYER</div>
+              <div style={{ flex: 1 }}>SCORE</div>
+              <div style={{ width: 32, textAlign: "center" }}>LV</div>
+              <div style={{ width: 48, textAlign: "center" }}>TIME</div>
+              <div style={{ width: 36, textAlign: "center" }}>ACC</div>
+              <div style={{ width: 28, textAlign: "center" }}>MODE</div>
+            </div>
+            {/* Scrollable ranking list */}
+            <div style={{
+              display: "flex", flexDirection: "column", gap: 5,
+              overflowY: "auto", flex: 1,
+              paddingRight: 4,
+            }}>
+              {rankings.map((entry, i) => {
+                const isMe = entry.userId === user?.id || entry.playerName === nickname;
+                return (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center",
+                  padding: "10px 12px", borderRadius: 12,
+                  background: isMe ? "rgba(192,132,252,0.1)" : i === 0 ? "rgba(255,215,0,0.08)" : "rgba(255,255,255,0.02)",
+                  border: isMe ? "1px solid rgba(192,132,252,0.25)" : i < 3 ? "1px solid rgba(255,215,0,0.15)" : "1px solid rgba(255,255,255,0.04)",
+                  fontSize: 13,
+                  transition: "background 0.2s",
+                }}>
+                  <div style={{ width: 28, fontWeight: 700, color: i < 3 ? "#FFD93D" : "rgba(255,255,255,0.35)", fontSize: 15 }}>
+                    {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : i + 1}
+                  </div>
+                  <div style={{
+                    width: 60, fontSize: 11, fontWeight: isMe ? 700 : 500,
+                    color: isMe ? "#C084FC" : "rgba(255,255,255,0.5)",
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {entry.playerName || "익명"}
+                  </div>
+                  <div style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>
+                    {entry.score}
+                    <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.4)", marginLeft: 3 }}>pts</span>
+                  </div>
+                  <div style={{ width: 32, textAlign: "center", color: "rgba(255,255,255,0.6)" }}>{entry.level}</div>
+                  <div style={{ width: 48, textAlign: "center", fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.6)", fontSize: 12 }}>{formatTime(entry.time)}</div>
+                  <div style={{ width: 36, textAlign: "center", fontSize: 12, color: entry.accuracy === 100 ? "#00C9A7" : "rgba(255,255,255,0.6)" }}>{entry.accuracy}%</div>
+                  <div style={{ width: 28, textAlign: "center" }}>{MODE_ICONS[entry.gameMode] || "?"}</div>
+                </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ─── COGNITIVE REPORT MODAL ─── */}
+      {showReport && (() => {
+        const metrics = calculateCognitiveMetrics(cognitiveHistory);
+        const categories = [
+          { key: "memory", label: "기억력", icon: "🧠", color: "#FF6B9D" },
+          { key: "reaction", label: "반응속도", icon: "⚡", color: "#FFD93D" },
+          { key: "pattern", label: "패턴인지", icon: "🔍", color: "#4DA8FF" },
+          { key: "focus", label: "집중력", icon: "🎯", color: "#00C9A7" },
+          { key: "creativity", label: "창의력", icon: "✨", color: "#C084FC" },
+        ];
+        const getTrendImprovement = (trend) => {
+          if (trend.length < 2) return 0;
+          const earlyCount = Math.min(3, Math.floor(trend.length / 2));
+          const early = trend.slice(0, earlyCount).reduce((a, b) => a + b, 0) / earlyCount;
+          const lateCount = Math.min(3, trend.length);
+          const late = trend.slice(-lateCount).reduce((a, b) => a + b, 0) / lateCount;
+          return Math.round(late - early);
+        };
+        const Sparkline = ({ data, color, height = 40, width = 120 }) => {
+          if (!data || data.length < 2) return null;
+          const max = Math.max(...data, 1);
+          const min = Math.min(...data, 0);
+          const range = max - min || 1;
+          const pts = data.map((v, i) => {
+            const x = (i / (data.length - 1)) * width;
+            const y = height - ((v - min) / range) * (height - 4) - 2;
+            return `${x},${y}`;
+          }).join(" ");
+          const areaPath = `M0,${height} L${data.map((v, i) => {
+            const x = (i / (data.length - 1)) * width;
+            const y = height - ((v - min) / range) * (height - 4) - 2;
+            return `${x},${y}`;
+          }).join(" L")} L${width},${height} Z`;
+          return (
+            <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ overflow: "visible" }}>
+              <defs>
+                <linearGradient id={`grad-${color.replace("#","")}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+                </linearGradient>
+              </defs>
+              <path d={areaPath} fill={`url(#grad-${color.replace("#","")})`} />
+              <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              {data.length > 0 && (() => {
+                const lastX = width;
+                const lastY = height - ((data[data.length - 1] - min) / range) * (height - 4) - 2;
+                return <circle cx={lastX} cy={lastY} r="3" fill={color} />;
+              })()}
+            </svg>
+          );
+        };
+        const ProgressRing = ({ value, color, size = 52, stroke = 4 }) => {
+          const r = (size - stroke) / 2;
+          const circ = 2 * Math.PI * r;
+          const offset = circ - (Math.min(value, 100) / 100) * circ;
+          return (
+            <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+              <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
+              <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+                strokeDasharray={circ} strokeDashoffset={offset}
+                strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease-out" }} />
+            </svg>
+          );
+        };
+        const overallScore = Math.round((metrics.memory + metrics.reaction + metrics.pattern + metrics.focus + metrics.creativity) / 5);
+        const getDoctorComment = () => {
+          const s = metrics.totalSessions;
+          const p = metrics.preventionScore;
+          let analysis = "";
+          if (s <= 2) {
+            analysis = `아직 ${s}회의 게임 기록이 있어 정밀한 분석이 어렵지만, 초기 측정 결과 인지 능력의 기초 지표가 확인되었습니다. 꾸준한 훈련을 통해 더 정확한 분석이 가능해집니다.`;
+          } else if (overallScore < 40) {
+            analysis = `현재 인지 기능 종합 점수는 ${overallScore}점으로, 아직 훈련 초기 단계입니다. 특히 ${categories.find(c => metrics[c.key] === Math.min(...categories.map(c2 => metrics[c2.key]))).label} 영역의 집중적인 훈련이 권장됩니다. 매일 2~3회의 꾸준한 반복 훈련이 인지 능력 향상에 큰 도움이 됩니다.`;
+          } else if (overallScore < 65) {
+            analysis = `인지 기능 종합 점수 ${overallScore}점으로 양호한 수준을 보이고 있습니다. ${categories.find(c => metrics[c.key] === Math.max(...categories.map(c2 => metrics[c2.key]))).label} 분야에서 특히 좋은 성과를 보이며, 지속적인 훈련으로 전반적 인지 기능이 고르게 발달하고 있습니다.`;
+          } else {
+            analysis = `인지 기능 종합 점수 ${overallScore}점으로 매우 우수한 수준입니다. 기억력, 반응속도, 패턴인지 능력이 고르게 발달되어 있으며, 꾸준한 훈련의 효과가 뚜렷하게 나타나고 있습니다.`;
+          }
+          let prevention = "";
+          if (p > 0) {
+            prevention = ` 현재까지의 훈련 데이터를 기반으로, 인지 자극 활동을 통한 인지장애 및 치매 예방 기여도는 약 ${p}%로 추정됩니다.`;
+            if (p >= 50) {
+              prevention += " 이는 정기적인 두뇌 활동이 신경가소성을 촉진하고, 인지 예비력(cognitive reserve)을 강화하는 데 효과적으로 작용하고 있음을 시사합니다.";
+            } else if (p >= 25) {
+              prevention += " 꾸준한 훈련을 지속하면 인지 예비력이 더욱 강화되어 예방 수치가 향상될 것으로 기대됩니다.";
+            } else {
+              prevention += " 아직 초기 단계이지만, 매일 꾸준히 훈련하시면 인지 건강 유지에 유의미한 효과가 나타날 것입니다.";
+            }
+          }
+          return analysis + prevention;
+        };
+        return (
+          <div
+            onClick={() => setShowReport(false)}
+            style={{
+              position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+              background: "rgba(0,0,0,0.75)",
+              backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              zIndex: 999,
+              animation: "modalBackdropIn 0.25s ease-out",
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "relative",
+                padding: "28px 20px 24px",
+                background: "linear-gradient(160deg, rgba(26,26,50,0.98) 0%, rgba(15,15,40,0.98) 100%)",
+                borderRadius: 20,
+                border: "1px solid rgba(255,255,255,0.1)",
+                boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(192,132,252,0.08)",
+                maxWidth: 420, width: "92%",
+                maxHeight: "82vh",
+                display: "flex", flexDirection: "column",
+                animation: "modalFadeIn 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)",
+                fontFamily: "'Outfit', sans-serif",
+                color: "#fff",
+                overflowY: "auto",
+              }}
+            >
+              {/* Close button */}
+              <button
+                onClick={() => setShowReport(false)}
+                style={{
+                  position: "sticky", top: 0, marginLeft: "auto",
+                  width: 32, height: 32, borderRadius: "50%",
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "rgba(255,255,255,0.6)",
+                  fontSize: 16, fontWeight: 300,
+                  cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  transition: "all 0.2s", flexShrink: 0,
+                  WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                  zIndex: 2,
+                }}
+                onMouseEnter={(e) => { e.target.style.background = "rgba(255,255,255,0.12)"; e.target.style.color = "#fff"; }}
+                onMouseLeave={(e) => { e.target.style.background = "rgba(255,255,255,0.06)"; e.target.style.color = "rgba(255,255,255,0.6)"; }}
+              >
+                ✕
+              </button>
+              {/* Title */}
+              <div style={{
+                fontSize: 13, letterSpacing: 4, color: "rgba(255,255,255,0.4)",
+                marginBottom: 6, textAlign: "center", fontWeight: 600, marginTop: -24,
+              }}>
+                📊 COGNITIVE REPORT
+              </div>
+              <div style={{
+                fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center", marginBottom: 20,
+              }}>
+                총 {metrics.totalSessions}회 훈련 기반 분석
+              </div>
+
+              {/* Overall Score Ring */}
+              <div style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 16, marginBottom: 22,
+                padding: "16px 20px", borderRadius: 16,
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.06)",
+              }}>
+                <div style={{ position: "relative" }}>
+                  <ProgressRing value={overallScore} color="#C084FC" size={68} stroke={5} />
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 20, fontWeight: 800, color: "#C084FC",
+                  }}>
+                    {overallScore}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>종합 인지 점수</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+                    {overallScore >= 65 ? "매우 우수" : overallScore >= 45 ? "양호" : overallScore >= 25 ? "보통" : "훈련 초기"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Metric Cards with Sparklines */}
+              <div style={{
+                display: "flex", flexDirection: "column", gap: 8, marginBottom: 20,
+              }}>
+                {categories.map((cat) => {
+                  const val = metrics[cat.key];
+                  const trend = metrics[`${cat.key}Trend`];
+                  const improvement = getTrendImprovement(trend);
+                  return (
+                    <div key={cat.key} style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      padding: "10px 12px", borderRadius: 12,
+                      background: "rgba(255,255,255,0.02)",
+                      border: "1px solid rgba(255,255,255,0.05)",
+                    }}>
+                      <div style={{ position: "relative", flexShrink: 0 }}>
+                        <ProgressRing value={val} color={cat.color} size={42} stroke={3.5} />
+                        <div style={{
+                          position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 11, fontWeight: 700, color: cat.color,
+                        }}>
+                          {val}
+                        </div>
+                      </div>
+                      <div style={{ minWidth: 62 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2 }}>
+                          {cat.icon} {cat.label}
+                        </div>
+                        <div style={{
+                          fontSize: 10,
+                          color: improvement > 0 ? "#00C9A7" : improvement < 0 ? "#FF6B6B" : "rgba(255,255,255,0.3)",
+                          fontWeight: 600,
+                        }}>
+                          {improvement > 0 ? `▲ +${improvement}` : improvement < 0 ? `▼ ${improvement}` : "—"}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+                        <Sparkline data={trend} color={cat.color} height={32} width={100} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Prevention Score Bar */}
+              <div style={{
+                padding: "14px 16px", borderRadius: 14,
+                background: "linear-gradient(135deg, rgba(0,201,167,0.08) 0%, rgba(77,168,255,0.08) 100%)",
+                border: "1px solid rgba(0,201,167,0.15)",
+                marginBottom: 18,
+              }}>
+                <div style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8,
+                }}>
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>🛡️ 인지장애 예방 기여도</span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: "#00C9A7" }}>{metrics.preventionScore}%</span>
+                </div>
+                <div style={{
+                  height: 6, borderRadius: 3,
+                  background: "rgba(255,255,255,0.06)",
+                  overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%", borderRadius: 3,
+                    background: "linear-gradient(90deg, #00C9A7, #4DA8FF)",
+                    width: `${metrics.preventionScore}%`,
+                    transition: "width 1s ease-out",
+                  }} />
+                </div>
+              </div>
+
+              {/* Doctor's Comment */}
+              <div style={{
+                padding: "16px",
+                borderRadius: 14,
+                background: "rgba(255,255,255,0.03)",
+                border: "1px solid rgba(255,255,255,0.06)",
+              }}>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
+                }}>
+                  <span style={{ fontSize: 20 }}>🩺</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>전문가 소견</span>
+                </div>
+                <p style={{
+                  fontSize: 12, lineHeight: 1.7,
+                  color: "rgba(255,255,255,0.55)",
+                  margin: 0,
+                  wordBreak: "keep-all",
+                }}>
+                  {getDoctorComment()}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
