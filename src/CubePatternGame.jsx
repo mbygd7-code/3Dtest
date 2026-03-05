@@ -702,7 +702,7 @@ export default function CubePatternGame() {
     if (!authEmail.trim()) { setAuthError("이메일을 입력해주세요"); return; }
     setAuthLoading(true); setAuthError(""); setAuthSuccess("");
     const { error } = await supabase.auth.resetPasswordForEmail(authEmail.trim(), {
-      redirectTo: window.location.origin,
+      redirectTo: window.location.hostname === "localhost" ? "https://3-dtest-deploy-2026.vercel.app" : window.location.origin,
     });
     setAuthLoading(false);
     if (error) { setAuthError(error.message); return; }
