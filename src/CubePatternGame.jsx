@@ -1116,6 +1116,7 @@ export default function CubePatternGame() {
       <div style={{
         minHeight: "100vh", background: "linear-gradient(145deg, #0a0a1a 0%, #1a1a3e 40%, #0d0d2b 100%)",
         display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Outfit', sans-serif",
+        paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)",
       }}>
         <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 14 }}>로딩 중...</div>
       </div>
@@ -1135,7 +1136,8 @@ export default function CubePatternGame() {
       <div style={{
         minHeight: "100vh", background: "linear-gradient(145deg, #0a0a1a 0%, #1a1a3e 40%, #0d0d2b 100%)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'Outfit', sans-serif", padding: 20,
+        fontFamily: "'Outfit', sans-serif",
+        padding: "calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))",
       }}>
         <div style={{
           width: "100%", maxWidth: 360,
@@ -1332,6 +1334,10 @@ export default function CubePatternGame() {
         overflow: "hidden",
         position: "relative",
         WebkitOverflowScrolling: "touch",
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
       }}
     >
       <link
@@ -1431,7 +1437,7 @@ export default function CubePatternGame() {
       {/* User info bar */}
       {nickname && (
         <div style={{
-          position: "absolute", top: 12, right: 16, zIndex: 20,
+          position: "absolute", top: "calc(12px + env(safe-area-inset-top))", right: "calc(16px + env(safe-area-inset-right))", zIndex: 20,
           display: "flex", alignItems: "center", gap: 8,
         }}>
           <span style={{
@@ -1548,7 +1554,7 @@ export default function CubePatternGame() {
         <>
           {/* TOP: Pattern display — fixed at top */}
           <div style={{
-            position: "absolute", top: 16, left: 0, right: 0,
+            position: "absolute", top: "calc(16px + env(safe-area-inset-top))", left: 0, right: 0,
             display: "flex", flexDirection: "column", alignItems: "center",
             zIndex: 30, pointerEvents: "none",
           }}>
@@ -1623,7 +1629,7 @@ export default function CubePatternGame() {
           </div>
           {/* BOTTOM: Stats bar — fixed at bottom, always visible */}
           <div style={{
-            position: "absolute", bottom: 24, left: 0, right: 0,
+            position: "absolute", bottom: "calc(24px + env(safe-area-inset-bottom))", left: 0, right: 0,
             display: "flex", justifyContent: "center", alignItems: "center",
             zIndex: 30, pointerEvents: "none",
           }}>
@@ -1684,7 +1690,7 @@ export default function CubePatternGame() {
       {gameState === "modeReady" && (
         <div style={{
           display: "flex", flexDirection: "column", alignItems: "center", gap: 12,
-          position: "absolute", bottom: "18%", left: "50%", transform: "translateX(-50%)",
+          position: "absolute", bottom: "calc(18% + env(safe-area-inset-bottom))", left: "50%", transform: "translateX(-50%)",
           zIndex: 20,
         }}>
           <button
@@ -1716,7 +1722,8 @@ export default function CubePatternGame() {
             : "rgba(10,10,26,0.85)",
           display: "flex", flexDirection: "column", alignItems: "center",
           justifyContent: "center", zIndex: 100,
-          paddingBottom: "12vh",
+          paddingBottom: "calc(12vh + env(safe-area-inset-bottom))",
+          paddingTop: "env(safe-area-inset-top)",
           backdropFilter: gameState === "folding" ? "none" : "blur(8px)",
           WebkitBackdropFilter: gameState === "folding" ? "none" : "blur(8px)",
           opacity: gameState === "folding" ? 0 : 1,
@@ -1995,6 +2002,7 @@ export default function CubePatternGame() {
             display: "flex", alignItems: "center", justifyContent: "center",
             zIndex: 999,
             animation: "modalBackdropIn 0.25s ease-out",
+            padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
           }}
         >
           <div
@@ -2205,6 +2213,7 @@ export default function CubePatternGame() {
               display: "flex", alignItems: "center", justifyContent: "center",
               zIndex: 999,
               animation: "modalBackdropIn 0.25s ease-out",
+              padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
             }}
           >
             <div
