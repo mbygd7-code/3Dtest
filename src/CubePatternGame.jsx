@@ -2687,15 +2687,14 @@ export default function CubePatternGame() {
             <div
               onClick={() => setShowReport(false)}
               style={{
-                position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
                 overflowY: "scroll",
                 WebkitOverflowScrolling: "touch",
               }}
             >
               <div style={{
-                minHeight: "100%",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                padding: "20px env(safe-area-inset-right) 20px env(safe-area-inset-left)",
+                display: "flex", justifyContent: "center",
+                padding: "40px 0",
               }}>
             <div
               onClick={(e) => e.stopPropagation()}
@@ -2707,7 +2706,7 @@ export default function CubePatternGame() {
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(192,132,252,0.08)",
                 maxWidth: 420, width: "92%",
-                flexShrink: 0,
+                alignSelf: "flex-start",
                 animation: "modalFadeIn 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)",
                 fontFamily: "'Outfit', sans-serif",
                 color: "#fff",
