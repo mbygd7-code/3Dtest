@@ -167,6 +167,40 @@ async function fetchNickname(userId) {
   } catch { return null; }
 }
 
+// ─── Supabase: Fetch user avatar URL ───
+async function fetchAvatarUrl(userId) {
+  if (!supabase || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", userId)
+      .single();
+    if (error) throw error;
+    return data?.avatar_url || null;
+  } catch { return null; }
+}
+
+// ─── Supabase: Upload avatar to storage ───
+async function uploadAvatar(userId, file) {
+  if (!supabase || !userId || !file) return null;
+  const fileExt = file.name.split(".").pop();
+  const filePath = `${userId}/avatar.${fileExt}`;
+  const { error: uploadError } = await supabase.storage
+    .from("avatars")
+    .upload(filePath, file, { upsert: true });
+  if (uploadError) throw uploadError;
+  const { data: { publicUrl } } = supabase.storage
+    .from("avatars")
+    .getPublicUrl(filePath);
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ avatar_url: publicUrl })
+    .eq("id", userId);
+  if (updateError) throw updateError;
+  return publicUrl;
+}
+
 // ─── Cognitive metrics calculation ───
 function calculateCognitiveMetrics(history) {
   if (!history || history.length === 0) {
@@ -521,6 +555,14 @@ export default function CubePatternGame() {
   const [authNewPassword, setAuthNewPassword] = useState(""); // for password reset
   const [authConfirmPassword, setAuthConfirmPassword] = useState(""); // for password reset confirm
 
+  // ─── Profile/Avatar state ───
+  const [avatarUrl, setAvatarUrl] = useState(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState(null);
+  const [avatarPreview, setAvatarPreview] = useState(null);
+  const avatarInputRef = useRef(null);
+
   const [rotX, setRotX] = useState(-20);
   const [rotY, setRotY] = useState(30);
   const dragging = useRef(false);
@@ -613,6 +655,7 @@ export default function CubePatternGame() {
       setAuthLoading(false);
       if (u) {
         fetchNickname(u.id).then((n) => { if (n) setNickname(n); });
+        fetchAvatarUrl(u.id).then((url) => { if (url) setAvatarUrl(url); });
       }
     });
     // Listen for auth state changes
@@ -620,7 +663,6 @@ export default function CubePatternGame() {
       const u = session?.user || null;
       setUser(u);
       if (_event === "PASSWORD_RECOVERY") {
-        // User clicked password reset link from email → show new password form
         setAuthMode("reset");
         setAuthError("");
         setAuthSuccess("");
@@ -629,8 +671,10 @@ export default function CubePatternGame() {
       }
       if (u) {
         fetchNickname(u.id).then((n) => { if (n) setNickname(n); });
+        fetchAvatarUrl(u.id).then((url) => { if (url) setAvatarUrl(url); });
       } else {
         setNickname("");
+        setAvatarUrl(null);
       }
     });
     return () => subscription.unsubscribe();
@@ -695,7 +739,34 @@ export default function CubePatternGame() {
     await supabase.auth.signOut();
     setUser(null);
     setNickname("");
+    setAvatarUrl(null);
+    setShowProfileModal(false);
     setCognitiveHistory([]);
+  };
+  const handleAvatarFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 5 * 1024 * 1024) return;
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
+  const handleAvatarUpload = async () => {
+    if (!avatarFile || !user) return;
+    setAvatarUploading(true);
+    try {
+      const url = await uploadAvatar(user.id, avatarFile);
+      if (url) {
+        setAvatarUrl(url + "?t=" + Date.now());
+        setAvatarFile(null);
+        setAvatarPreview(null);
+        setShowProfileModal(false);
+      }
+    } catch (err) {
+      console.error("Avatar upload failed:", err);
+    } finally {
+      setAvatarUploading(false);
+    }
   };
   const handleForgotPassword = async () => {
     if (!supabase) return;
@@ -1325,7 +1396,7 @@ export default function CubePatternGame() {
       style={{
         minHeight: "100vh",
         minHeight: "100dvh",
-        background: "linear-gradient(145deg, #0a0a1a 0%, #1a1a3e 40%, #0d0d2b 100%)",
+        background: "linear-gradient(145deg, #070714 0%, #0f0f2d 30%, #1a1a3e 60%, #0d0d2b 100%)",
         color: "#fff",
         fontFamily: "'Outfit', sans-serif",
         display: "flex",
@@ -1422,69 +1493,77 @@ export default function CubePatternGame() {
           0% { opacity: 0; }
           100% { opacity: 1; }
         }
+        @keyframes avatarRingPulse {
+          0%, 100% { box-shadow: 0 0 0 2px rgba(192,132,252,0.3); }
+          50% { box-shadow: 0 0 0 3px rgba(192,132,252,0.15), 0 0 10px rgba(192,132,252,0.2); }
+        }
+        @keyframes profileSlideIn {
+          0% { opacity: 0; transform: translateY(20px) scale(0.95); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
       `}</style>
       {/* Background orbs */}
       <div style={{
         position: "absolute", top: "10%", left: "15%", width: 300, height: 300,
-        background: "radial-gradient(circle, rgba(255,59,92,0.08) 0%, transparent 70%)",
+        background: "radial-gradient(circle, rgba(255,59,92,0.06) 0%, transparent 70%)",
         borderRadius: "50%", pointerEvents: "none", animation: "glow 4s ease-in-out infinite",
       }} />
       <div style={{
         position: "absolute", top: "50%", right: "10%", width: 250, height: 250,
-        background: "radial-gradient(circle, rgba(77,168,255,0.08) 0%, transparent 70%)",
+        background: "radial-gradient(circle, rgba(77,168,255,0.06) 0%, transparent 70%)",
         borderRadius: "50%", pointerEvents: "none", animation: "glow 5s ease-in-out infinite 1s",
       }} />
-      {/* User info bar */}
-      {nickname && (
-        <div style={{
-          position: "absolute", top: "calc(12px + env(safe-area-inset-top))", right: "calc(16px + env(safe-area-inset-right))", zIndex: 20,
-          display: "flex", alignItems: "center", gap: 8,
-        }}>
-          <span style={{
-            fontSize: 11, color: "rgba(255,255,255,0.5)", fontWeight: 500,
-          }}>
-            👤 {nickname}
-          </span>
-          <button
-            onClick={handleLogout}
+      <div style={{
+        position: "absolute", bottom: "20%", left: "40%", width: 350, height: 350,
+        background: "radial-gradient(circle, rgba(192,132,252,0.05) 0%, transparent 70%)",
+        borderRadius: "50%", pointerEvents: "none", animation: "glow 6s ease-in-out infinite 2s",
+      }} />
+      {/* ═══ PERSISTENT TOP BAR ═══ */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0,
+        paddingTop: "calc(10px + env(safe-area-inset-top))",
+        paddingLeft: "calc(16px + env(safe-area-inset-left))",
+        paddingRight: "calc(16px + env(safe-area-inset-right))",
+        paddingBottom: 10,
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        zIndex: 50,
+        background: "linear-gradient(180deg, rgba(10,10,26,0.9) 0%, rgba(10,10,26,0.5) 60%, transparent 100%)",
+        pointerEvents: "auto",
+      }}>
+        {/* Left: Game title */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontSize: 18, filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.3))" }}>🎲</div>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: 2, color: "rgba(255,255,255,0.85)", textShadow: "0 1px 4px rgba(0,0,0,0.3)" }}>
+            CUBE PATTERN
+          </div>
+        </div>
+        {/* Right: Avatar + nickname */}
+        {nickname && (
+          <div
+            onClick={() => setShowProfileModal(true)}
             style={{
-              padding: "4px 10px", fontSize: 10, fontWeight: 600,
-              fontFamily: "'Outfit', sans-serif",
-              background: "rgba(255,255,255,0.06)",
-              color: "rgba(255,255,255,0.4)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 20, cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+              padding: "5px 10px 5px 5px", borderRadius: 24,
+              background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)",
               transition: "all 0.2s",
-              WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
             }}
-            onMouseEnter={(e) => { e.target.style.color = "#fff"; e.target.style.background = "rgba(255,255,255,0.1)"; }}
-            onMouseLeave={(e) => { e.target.style.color = "rgba(255,255,255,0.4)"; e.target.style.background = "rgba(255,255,255,0.06)"; }}
           >
-            로그아웃
-          </button>
-        </div>
-      )}
-      {/* Header — only shown on non-gameplay screens */}
-      {(gameState === "idle" || gameState === "gameover" || gameState === "folding" || gameState === "lidAnim") && (
-        <div style={{
-          width: "100%", maxWidth: 500, padding: "24px 20px 0",
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          position: "relative", zIndex: 10,
-        }}>
-          <div>
-            <div style={{ fontSize: 11, letterSpacing: 3, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", marginBottom: 4 }}>
-              CUBE PATTERN
+            <div style={{
+              width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+              background: avatarUrl ? `url(${avatarUrl}) center/cover no-repeat` : "linear-gradient(135deg, #C084FC, #818CF8)",
+              border: "2px solid rgba(192,132,252,0.4)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, color: "#fff", fontWeight: 700,
+              animation: "avatarRingPulse 3s ease-in-out infinite",
+            }}>
+              {!avatarUrl && nickname.charAt(0).toUpperCase()}
             </div>
-            <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: -1 }}>
-              패턴 매칭
-            </div>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.65)", maxWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {nickname}
+            </span>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", letterSpacing: 2 }}>BEST</div>
-            <div style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>{bestScore}</div>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
       {/* Mode selector — only visible on modeReady screen */}
       {gameState === "modeReady" && (
         <div style={{
@@ -1552,17 +1631,18 @@ export default function CubePatternGame() {
       {/* ═══ Game HUD — always visible during active gameplay (no fade transitions) ═══ */}
       {gameState !== "idle" && gameState !== "gameover" && gameState !== "folding" && gameState !== "lidAnim" && gameState !== "modeReady" && (
         <>
-          {/* TOP: Pattern display — fixed at top */}
+          {/* TOP: Pattern display — below top bar */}
           <div style={{
-            position: "absolute", top: "calc(16px + env(safe-area-inset-top))", left: 0, right: 0,
+            position: "absolute", top: "calc(60px + env(safe-area-inset-top))", left: 0, right: 0,
             display: "flex", flexDirection: "column", alignItems: "center",
             zIndex: 30, pointerEvents: "none",
           }}>
             <div style={{
-              display: "flex", gap: 14, padding: "16px 24px",
-              background: "rgba(10,10,26,0.75)",
-              backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-              borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)",
+              display: "flex", gap: 14, padding: "14px 22px",
+              background: "rgba(10,10,26,0.8)",
+              backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+              borderRadius: 22, border: "1px solid rgba(255,255,255,0.06)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)",
               flexWrap: "wrap", justifyContent: "center",
               maxWidth: 500,
             }}>
@@ -1635,9 +1715,10 @@ export default function CubePatternGame() {
           }}>
             <div style={{
               display: "flex", gap: 16, padding: "12px 24px",
-              background: "rgba(10,10,26,0.75)",
-              backdropFilter: "blur(10px)", WebkitBackdropFilter: "blur(10px)",
-              borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgba(10,10,26,0.8)",
+              backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+              borderRadius: 20, border: "1px solid rgba(255,255,255,0.06)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)",
               alignItems: "center",
             }}>
               <div style={{ textAlign: "center" }}>
@@ -1739,33 +1820,52 @@ export default function CubePatternGame() {
               <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", marginBottom: 16 }}>
                 레벨 {level}까지 도달 {score >= bestScore && score > 0 ? "— 🏆 새로운 최고 기록!" : ""}
               </div>
-              <div style={{ display: "flex", gap: 24, justifyContent: "center" }}>
+              <div style={{
+                display: "flex", gap: 20, justifyContent: "center",
+                padding: "14px 20px", borderRadius: 16,
+                background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
+              }}>
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 4 }}>TIME</div>
-                  <div style={{ fontSize: 20, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatTime(elapsedTime)}</div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", letterSpacing: 2, marginBottom: 4 }}>TIME</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{formatTime(elapsedTime)}</div>
                 </div>
-                <div style={{ width: 1, background: "rgba(255,255,255,0.1)" }} />
+                <div style={{ width: 1, background: "rgba(255,255,255,0.08)" }} />
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 4 }}>ACCURACY</div>
-                  <div style={{ fontSize: 20, fontWeight: 600, color: accuracy === 100 ? "#00C9A7" : "#fff" }}>{accuracy}%</div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", letterSpacing: 2, marginBottom: 4 }}>ACCURACY</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: accuracy === 100 ? "#00C9A7" : "#fff" }}>{accuracy}%</div>
                 </div>
-                <div style={{ width: 1, background: "rgba(255,255,255,0.1)" }} />
+                <div style={{ width: 1, background: "rgba(255,255,255,0.08)" }} />
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 4 }}>RANK SCORE</div>
-                  <div style={{ fontSize: 20, fontWeight: 600, color: "#FFD93D" }}>{calculateCompositeScore(score, elapsedTime, accuracy)}</div>
+                  <div style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", letterSpacing: 2, marginBottom: 4 }}>RANK</div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: "#FFD93D" }}>{calculateCompositeScore(score, elapsedTime, accuracy)}</div>
                 </div>
               </div>
             </div>
           )}
           {gameState === "idle" && (
             <div style={{ textAlign: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 42, fontWeight: 800, marginBottom: 8, letterSpacing: -1 }}>
+              <div style={{
+                fontSize: 44, fontWeight: 800, marginBottom: 8, letterSpacing: 2,
+                background: "linear-gradient(135deg, #fff 30%, rgba(192,132,252,0.9) 100%)",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}>
                 CUBE<br/>PATTERN
               </div>
-              <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", lineHeight: 1.6, maxWidth: 280 }}>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.7, maxWidth: 280 }}>
                 3D 큐브를 드래그하여 회전시키고<br/>
                 패턴 순서대로 면을 터치하세요
               </div>
+              {bestScore > 0 && (
+                <div style={{
+                  marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "5px 14px", background: "rgba(255,215,0,0.06)",
+                  borderRadius: 20, border: "1px solid rgba(255,215,0,0.12)",
+                }}>
+                  <span style={{ fontSize: 10, color: "rgba(255,215,0,0.5)", letterSpacing: 2, fontWeight: 600 }}>BEST</span>
+                  <span style={{ fontSize: 15, fontWeight: 700, color: "#FFD93D" }}>{bestScore}</span>
+                </div>
+              )}
             </div>
           )}
           {/* Mini rotating cube preview */}
@@ -1908,9 +2008,10 @@ export default function CubePatternGame() {
                   key={mode}
                   onClick={(e) => { e.stopPropagation(); handleModeSelect(mode); }}
                   style={{
-                    width: 48, height: 48, borderRadius: 14,
-                    border: gameMode === mode ? "2px solid rgba(255,255,255,0.7)" : "2px solid rgba(255,255,255,0.15)",
-                    background: gameMode === mode ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.04)",
+                    width: 48, height: 48, borderRadius: 16,
+                    border: gameMode === mode ? "2px solid rgba(255,255,255,0.5)" : "2px solid rgba(255,255,255,0.1)",
+                    background: gameMode === mode ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.03)",
+                    backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
                     color: "#fff", fontSize: mode === "number" ? 20 : 18,
                     fontWeight: mode === "number" ? 800 : 400,
                     fontFamily: "'Outfit', sans-serif",
@@ -1966,12 +2067,12 @@ export default function CubePatternGame() {
               <button
                 onClick={startGame}
                 style={{
-                  padding: "16px 48px", fontSize: 16, fontWeight: 700,
+                  padding: "16px 52px", fontSize: 16, fontWeight: 700,
                   fontFamily: "'Outfit', sans-serif",
-                  background: "linear-gradient(135deg, #FF3B5C, #FF8A5C)",
-                  color: "#fff", border: "none", borderRadius: 50,
+                  background: "linear-gradient(135deg, #FF3B5C, #FF6B8A, #FF8A5C)",
+                  color: "#fff", border: "none", borderRadius: 16,
                   cursor: "pointer", letterSpacing: 1,
-                  boxShadow: "0 4px 24px rgba(255,59,92,0.4)",
+                  boxShadow: "0 4px 24px rgba(255,59,92,0.4), 0 0 40px rgba(255,59,92,0.12)",
                   transition: "transform 0.2s, box-shadow 0.2s, opacity 0.4s",
                   WebkitAppearance: "none",
                   WebkitTapHighlightColor: "transparent",
@@ -1987,8 +2088,119 @@ export default function CubePatternGame() {
               >
                 {gameState === "gameover" ? "다시 도전" : "게임 시작"}
               </button>
+              {/* Logout button — subtle, below start */}
+              {nickname && (
+                <button
+                  onClick={handleLogout}
+                  style={{
+                    marginTop: 16, padding: "7px 18px", fontSize: 11, fontWeight: 500,
+                    fontFamily: "'Outfit', sans-serif", background: "transparent",
+                    color: "rgba(255,255,255,0.25)", border: "1px solid rgba(255,255,255,0.06)",
+                    borderRadius: 20, cursor: "pointer", letterSpacing: 1, transition: "all 0.2s",
+                    WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  로그아웃
+                </button>
+              )}
             </div>
           )}
+        </div>
+      )}
+      {/* ─── PROFILE MODAL ─── */}
+      {showProfileModal && (
+        <div
+          onClick={() => { setShowProfileModal(false); setAvatarFile(null); setAvatarPreview(null); }}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(0,0,0,0.75)",
+            backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 1000, animation: "modalBackdropIn 0.25s ease-out",
+            padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative", padding: "32px 28px 28px", textAlign: "center",
+              background: "linear-gradient(160deg, rgba(26,26,50,0.98) 0%, rgba(15,15,40,0.98) 100%)",
+              borderRadius: 24, border: "1px solid rgba(255,255,255,0.1)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(192,132,252,0.08)",
+              maxWidth: 340, width: "88%",
+              animation: "profileSlideIn 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)",
+              fontFamily: "'Outfit', sans-serif", color: "#fff",
+            }}
+          >
+            {/* Close button */}
+            <button
+              onClick={() => { setShowProfileModal(false); setAvatarFile(null); setAvatarPreview(null); }}
+              style={{
+                position: "absolute", top: 12, right: 12, width: 32, height: 32, borderRadius: "50%",
+                background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+                color: "rgba(255,255,255,0.5)", fontSize: 16, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+              }}
+            >✕</button>
+            {/* Large avatar */}
+            <div
+              onClick={() => avatarInputRef.current?.click()}
+              style={{
+                width: 96, height: 96, borderRadius: "50%", margin: "0 auto 16px", cursor: "pointer",
+                background: (avatarPreview || avatarUrl)
+                  ? `url(${avatarPreview || avatarUrl}) center/cover no-repeat`
+                  : "linear-gradient(135deg, #C084FC, #818CF8)",
+                border: "3px solid rgba(192,132,252,0.4)",
+                boxShadow: "0 0 20px rgba(192,132,252,0.2), 0 8px 32px rgba(0,0,0,0.3)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 36, color: "#fff", fontWeight: 700, position: "relative",
+              }}
+            >
+              {!(avatarPreview || avatarUrl) && (nickname ? nickname.charAt(0).toUpperCase() : "?")}
+              {/* Camera overlay */}
+              <div style={{
+                position: "absolute", bottom: 0, right: 0,
+                width: 28, height: 28, borderRadius: "50%",
+                background: "rgba(10,10,26,0.9)", border: "2px solid rgba(192,132,252,0.5)",
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13,
+              }}>📷</div>
+            </div>
+            <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarFileSelect} />
+            {/* Nickname & email */}
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{nickname}</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 20 }}>{user?.email}</div>
+            {/* Upload/Save button */}
+            {avatarFile ? (
+              <button
+                onClick={handleAvatarUpload}
+                disabled={avatarUploading}
+                style={{
+                  width: "100%", padding: "12px 0", fontSize: 14, fontWeight: 700,
+                  fontFamily: "'Outfit', sans-serif",
+                  background: avatarUploading ? "rgba(192,132,252,0.3)" : "linear-gradient(135deg, #C084FC, #818CF8)",
+                  color: "#fff", border: "none", borderRadius: 14, cursor: avatarUploading ? "wait" : "pointer",
+                  boxShadow: "0 4px 20px rgba(192,132,252,0.3)",
+                  WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                {avatarUploading ? "업로드 중..." : "사진 저장"}
+              </button>
+            ) : (
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                style={{
+                  padding: "10px 24px", fontSize: 12, fontWeight: 600,
+                  fontFamily: "'Outfit', sans-serif",
+                  background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.6)",
+                  border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20, cursor: "pointer",
+                  WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                }}
+              >
+                📷 사진 변경
+              </button>
+            )}
+          </div>
         </div>
       )}
       {/* ─── RANKING MODAL POPUP ─── */}
