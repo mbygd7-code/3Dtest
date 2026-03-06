@@ -44,6 +44,145 @@ function getLevelConfig(lvl) {
   return LEVEL_CONFIG[Math.max(0, idx)];
 }
 
+// ─── Web Audio Sound System (iOS compatible) ───
+const SoundEngine = (() => {
+  let ctx = null;
+  let unlocked = false;
+
+  const getCtx = () => {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    return ctx;
+  };
+
+  // iOS requires AudioContext.resume() after a user gesture
+  const unlock = () => {
+    if (unlocked) return;
+    const c = getCtx();
+    if (c.state === "suspended") c.resume();
+    // Play silent buffer to fully unlock on iOS
+    const buf = c.createBuffer(1, 1, 22050);
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    src.connect(c.destination);
+    src.start(0);
+    unlocked = true;
+  };
+
+  // Attach unlock to first user interaction
+  if (typeof window !== "undefined") {
+    const events = ["touchstart", "touchend", "mousedown", "click"];
+    const handler = () => {
+      unlock();
+      events.forEach((e) => window.removeEventListener(e, handler, true));
+    };
+    events.forEach((e) => window.addEventListener(e, handler, true));
+  }
+
+  const playTone = (freq, duration, type = "sine", vol = 0.15, delay = 0) => {
+    try {
+      const c = getCtx();
+      if (c.state === "suspended") c.resume();
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, c.currentTime + delay);
+      gain.gain.setValueAtTime(vol, c.currentTime + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + duration);
+      osc.connect(gain);
+      gain.connect(c.destination);
+      osc.start(c.currentTime + delay);
+      osc.stop(c.currentTime + delay + duration);
+    } catch (e) { /* silent fail */ }
+  };
+
+  const playNoise = (duration, vol = 0.08) => {
+    try {
+      const c = getCtx();
+      if (c.state === "suspended") c.resume();
+      const bufferSize = c.sampleRate * duration;
+      const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+      const src = c.createBufferSource();
+      src.buffer = buffer;
+      const gain = c.createGain();
+      gain.gain.setValueAtTime(vol, c.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
+      const filter = c.createBiquadFilter();
+      filter.type = "highpass";
+      filter.frequency.value = 3000;
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(c.destination);
+      src.start();
+    } catch (e) { /* silent fail */ }
+  };
+
+  return {
+    unlock,
+    // 면 터치 (짧은 클릭음)
+    tap: () => playTone(800, 0.08, "sine", 0.12),
+    // 패턴 보여줄 때 (각 스텝마다 음계 다르게)
+    patternStep: (index) => {
+      const notes = [523, 587, 659, 698, 784, 880, 988, 1047]; // C5~C6
+      const freq = notes[index % notes.length];
+      playTone(freq, 0.2, "sine", 0.15);
+    },
+    // 정답
+    correct: () => {
+      playTone(523, 0.12, "sine", 0.15, 0);
+      playTone(659, 0.12, "sine", 0.15, 0.08);
+      playTone(784, 0.2, "sine", 0.18, 0.16);
+    },
+    // 콤보 (더 화려한 아르페지오)
+    combo: () => {
+      playTone(523, 0.1, "sine", 0.12, 0);
+      playTone(659, 0.1, "sine", 0.12, 0.06);
+      playTone(784, 0.1, "sine", 0.14, 0.12);
+      playTone(1047, 0.25, "triangle", 0.18, 0.18);
+    },
+    // 오답
+    wrong: () => {
+      playTone(200, 0.2, "sawtooth", 0.1, 0);
+      playTone(180, 0.3, "sawtooth", 0.08, 0.1);
+    },
+    // 레벨업
+    levelUp: () => {
+      playTone(523, 0.1, "sine", 0.12, 0);
+      playTone(659, 0.1, "sine", 0.12, 0.1);
+      playTone(784, 0.1, "sine", 0.14, 0.2);
+      playTone(1047, 0.15, "sine", 0.16, 0.3);
+      playTone(1318, 0.3, "triangle", 0.18, 0.4);
+    },
+    // 게임오버
+    gameOver: () => {
+      playTone(440, 0.3, "sine", 0.12, 0);
+      playTone(370, 0.3, "sine", 0.12, 0.25);
+      playTone(330, 0.3, "sine", 0.12, 0.5);
+      playTone(262, 0.5, "sine", 0.15, 0.75);
+    },
+    // 시간 초과 경고 (3초 남았을 때)
+    timeWarning: () => playTone(1000, 0.08, "square", 0.06),
+    // 게임 시작
+    gameStart: () => {
+      playTone(523, 0.1, "sine", 0.1, 0);
+      playTone(659, 0.1, "sine", 0.1, 0.1);
+      playTone(784, 0.15, "sine", 0.12, 0.2);
+    },
+    // 전체 클리어 (승리 팡파레)
+    victory: () => {
+      playTone(523, 0.15, "sine", 0.12, 0);
+      playTone(659, 0.15, "sine", 0.12, 0.12);
+      playTone(784, 0.15, "sine", 0.14, 0.24);
+      playTone(1047, 0.2, "sine", 0.16, 0.36);
+      playTone(1318, 0.15, "triangle", 0.14, 0.5);
+      playTone(1568, 0.4, "triangle", 0.18, 0.62);
+    },
+  };
+})();
+
 // Safari-compatible 3D style helpers
 const preserve3d = { transformStyle: "preserve-3d", WebkitTransformStyle: "preserve-3d" };
 const hiddenBack = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
@@ -847,6 +986,16 @@ export default function CubePatternGame() {
     return () => clearRoundTimer();
   }, [gameState, clearRoundTimer]);
 
+  // ─── Time warning beep at 3 seconds ───
+  const timeWarningFired = useRef(false);
+  useEffect(() => {
+    if (gameState === "input" && roundTimeLeft <= 3000 && roundTimeLeft > 0 && !timeWarningFired.current) {
+      timeWarningFired.current = true;
+      SoundEngine.timeWarning();
+    }
+    if (gameState !== "input") timeWarningFired.current = false;
+  }, [gameState, roundTimeLeft]);
+
   const startGame = () => {
     setScore(0);
     setLevel(1);
@@ -873,7 +1022,7 @@ export default function CubePatternGame() {
     // Phase 3 (2800ms): burst done, switch to breathing
     setTimeout(() => { setGlowEdges(false); setEdgeBreathing(true); }, 2800);
     // Phase 4 (3200ms): game starts + timer starts
-    setTimeout(() => { startTimer(); startRound(1, 1); }, 3200);
+    setTimeout(() => { SoundEngine.gameStart(); startTimer(); startRound(1, 1); }, 3200);
   };
   const handleModeSelect = (mode) => {
     if (mode === gameMode) return;
@@ -937,6 +1086,7 @@ export default function CubePatternGame() {
       if (i < p.length) {
         setShowIndex(i);
         setHighlightFace(p[i]);
+        SoundEngine.patternStep(i);
         setTimeout(() => {
           setHighlightFace(null);
         }, 500);
@@ -953,6 +1103,7 @@ export default function CubePatternGame() {
     (faceKey) => {
       if (gameState !== "input") return;
       if (isDragMove.current) return;
+      SoundEngine.tap();
       setTotalAttempts((prev) => prev + 1);
       const newInput = [...playerInput, faceKey];
       setPlayerInput(newInput);
@@ -965,7 +1116,9 @@ export default function CubePatternGame() {
         setCombo(0);
         setShakeAnim(true);
         setTimeout(() => setShakeAnim(false), 500);
+        SoundEngine.wrong();
         if (newLives <= 0) {
+          setTimeout(() => SoundEngine.gameOver(), 300);
           stopTimer();
           setGameState("gameover");
           setGlowEdges(false);
@@ -1029,6 +1182,8 @@ export default function CubePatternGame() {
         const earned = level * 100 + bonus;
         const newScore = score + earned;
         setScore(newScore);
+        // Sound: combo or correct
+        if (newCombo >= 2) { SoundEngine.combo(); } else { SoundEngine.correct(); }
         setMessage(
           bonus > 0
             ? `🔥 ${newCombo}콤보! +${earned}점`
@@ -1044,6 +1199,7 @@ export default function CubePatternGame() {
             startRound(level, nextRound);
           } else if (level < MAX_LEVEL) {
             // Level cleared! Next level
+            SoundEngine.levelUp();
             const nextLvl = level + 1;
             setLevel(nextLvl);
             setCurrentRound(1);
@@ -1051,6 +1207,7 @@ export default function CubePatternGame() {
             setTimeout(() => startRound(nextLvl, 1), 800);
           } else {
             // All 10 levels cleared!
+            SoundEngine.victory();
             stopTimer();
             setGameState("gameover");
             setGlowEdges(false);
@@ -1092,7 +1249,9 @@ export default function CubePatternGame() {
     setCombo(0);
     setShakeAnim(true);
     setTimeout(() => setShakeAnim(false), 500);
+    SoundEngine.wrong();
     if (newLives <= 0) {
+      setTimeout(() => SoundEngine.gameOver(), 300);
       stopTimer();
       setGameState("gameover");
       setGlowEdges(false);
