@@ -2336,10 +2336,10 @@ export default function CubePatternGame() {
                 </button>
               )}
               <div style={{
-                marginTop: 12, fontSize: 11, color: "rgba(255,255,255,0.3)",
+                marginTop: 28, fontSize: 11, color: "rgba(255,255,255,0.3)",
                 letterSpacing: 1,
               }}>
-                v1.0.0
+                Cube v1.0.0
               </div>
             </div>
           )}
