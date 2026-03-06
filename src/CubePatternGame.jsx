@@ -709,6 +709,7 @@ export default function CubePatternGame() {
   const [showRanking, setShowRanking] = useState(false);
   // Cognitive Report
   const [showReport, setShowReport] = useState(false);
+  const [reportDetailOpen, setReportDetailOpen] = useState(false);
   const [cognitiveHistory, setCognitiveHistory] = useState([]);
   // Round countdown (dynamic per level)
   const levelConfig = getLevelConfig(level);
@@ -2202,24 +2203,22 @@ export default function CubePatternGame() {
                 >
                   📊 리포트
                 </button>
-                {rankings.length > 0 && (
-                  <button
-                    onClick={() => setShowRanking(true)}
-                    style={{
-                      padding: "10px 24px", fontSize: 13, fontWeight: 600,
-                      fontFamily: "'Outfit', sans-serif",
-                      background: "rgba(255,255,255,0.06)",
-                      color: "rgba(255,255,255,0.7)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                      borderRadius: 50, cursor: "pointer",
-                      letterSpacing: 1, transition: "all 0.3s",
-                      WebkitAppearance: "none",
-                      WebkitTapHighlightColor: "transparent",
-                    }}
-                  >
-                    🏆 랭킹
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowRanking(true)}
+                  style={{
+                    padding: "10px 24px", fontSize: 13, fontWeight: 600,
+                    fontFamily: "'Outfit', sans-serif",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "rgba(255,255,255,0.7)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    borderRadius: 50, cursor: "pointer",
+                    letterSpacing: 1, transition: "all 0.3s",
+                    WebkitAppearance: "none",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  🏆 랭킹
+                </button>
               </div>
               {gameState === "gameover" ? (
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -2424,7 +2423,7 @@ export default function CubePatternGame() {
         </div>
       )}
       {/* ─── RANKING MODAL POPUP ─── */}
-      {showRanking && rankings.length > 0 && (
+      {showRanking && (
         <div
           onClick={() => setShowRanking(false)}
           style={{
@@ -2487,6 +2486,31 @@ export default function CubePatternGame() {
             }}>
               🏆 TOP RANKINGS
             </div>
+            {rankings.length === 0 ? (
+              <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                <div style={{ fontSize: 48, marginBottom: 16 }}>🏆</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "rgba(255,255,255,0.7)" }}>
+                  아직 랭킹 기록이 없습니다
+                </div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
+                  게임을 플레이하면 랭킹이<br />이곳에 표시됩니다
+                </div>
+                <button
+                  onClick={() => setShowRanking(false)}
+                  style={{
+                    marginTop: 24, padding: "12px 32px", fontSize: 13, fontWeight: 600,
+                    fontFamily: "'Outfit', sans-serif",
+                    background: "linear-gradient(135deg, #C084FC, #818CF8)",
+                    color: "#fff", border: "none", borderRadius: 12,
+                    cursor: "pointer",
+                    WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  게임 시작하기
+                </button>
+              </div>
+            ) : (
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
             {/* Table header */}
             <div style={{
               display: "flex", padding: "0 12px 10px",
@@ -2541,6 +2565,7 @@ export default function CubePatternGame() {
                 );
               })}
             </div>
+            </div>)}
           </div>
         </div>
       )}
@@ -2642,9 +2667,11 @@ export default function CubePatternGame() {
               position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
               background: "rgba(0,0,0,0.75)",
               backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
-              display: "flex", alignItems: "center", justifyContent: "center",
+              display: "flex", alignItems: "flex-start", justifyContent: "center",
               zIndex: 999,
               animation: "modalBackdropIn 0.25s ease-out",
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
               padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
             }}
           >
@@ -2658,19 +2685,18 @@ export default function CubePatternGame() {
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(192,132,252,0.08)",
                 maxWidth: 420, width: "92%",
-                maxHeight: "82vh",
-                display: "flex", flexDirection: "column",
+                margin: "auto 0",
+                flexShrink: 0,
                 animation: "modalFadeIn 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)",
                 fontFamily: "'Outfit', sans-serif",
                 color: "#fff",
-                overflowY: "auto",
               }}
             >
               {/* Close button */}
               <button
                 onClick={() => setShowReport(false)}
                 style={{
-                  position: "sticky", top: 0, marginLeft: "auto",
+                  position: "absolute", top: 12, right: 12,
                   width: 32, height: 32, borderRadius: "50%",
                   background: "rgba(255,255,255,0.06)",
                   border: "1px solid rgba(255,255,255,0.1)",
@@ -2731,75 +2757,102 @@ export default function CubePatternGame() {
               {/* All metrics content — only when data exists */}
               {metrics.totalSessions > 0 && (
                 <div>
-                  {/* Overall Score Ring */}
+                  {/* Overall Score Card — expandable */}
                   <div style={{
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    gap: 16, marginBottom: 22,
-                    padding: "16px 20px", borderRadius: 16,
+                    marginBottom: 20, borderRadius: 16,
                     background: "rgba(255,255,255,0.03)",
                     border: "1px solid rgba(255,255,255,0.06)",
+                    overflow: "hidden",
                   }}>
-                    <div style={{ position: "relative" }}>
-                      <ProgressRing value={overallScore} color="#C084FC" size={68} stroke={5} />
-                      <div style={{
-                        position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                    {/* Score header — clickable */}
+                    <div
+                      onClick={() => setReportDetailOpen(v => !v)}
+                      style={{
                         display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 20, fontWeight: 800, color: "#C084FC",
-                      }}>
-                        {overallScore}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>종합 인지 점수</div>
-                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
-                        {overallScore >= 65 ? "매우 우수" : overallScore >= 45 ? "양호" : overallScore >= 25 ? "보통" : "훈련 초기"}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Metric Cards with Sparklines */}
-                  <div style={{
-                    display: "flex", flexDirection: "column", gap: 8, marginBottom: 20,
-                  }}>
-                    {categories.map((cat) => {
-                      const val = metrics[cat.key];
-                      const trend = metrics[`${cat.key}Trend`];
-                      const improvement = getTrendImprovement(trend);
-                      return (
-                        <div key={cat.key} style={{
-                          display: "flex", alignItems: "center", gap: 10,
-                          padding: "10px 12px", borderRadius: 12,
-                          background: "rgba(255,255,255,0.02)",
-                          border: "1px solid rgba(255,255,255,0.05)",
+                        gap: 16, padding: "16px 20px",
+                        cursor: "pointer",
+                        WebkitTapHighlightColor: "transparent",
+                        userSelect: "none",
+                      }}
+                    >
+                      <div style={{ position: "relative" }}>
+                        <ProgressRing value={overallScore} color="#C084FC" size={68} stroke={5} />
+                        <div style={{
+                          position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 20, fontWeight: 800, color: "#C084FC",
                         }}>
-                          <div style={{ position: "relative", flexShrink: 0 }}>
-                            <ProgressRing value={val} color={cat.color} size={42} stroke={3.5} />
-                            <div style={{
-                              position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 11, fontWeight: 700, color: cat.color,
-                            }}>
-                              {val}
-                            </div>
-                          </div>
-                          <div style={{ minWidth: 62 }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2 }}>
-                              {cat.icon} {cat.label}
-                            </div>
-                            <div style={{
-                              fontSize: 10,
-                              color: improvement > 0 ? "#00C9A7" : improvement < 0 ? "#FF6B6B" : "rgba(255,255,255,0.3)",
-                              fontWeight: 600,
-                            }}>
-                              {improvement > 0 ? `▲ +${improvement}` : improvement < 0 ? `▼ ${improvement}` : "—"}
-                            </div>
-                          </div>
-                          <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
-                            <Sparkline data={trend} color={cat.color} height={32} width={100} />
-                          </div>
+                          {overallScore}
                         </div>
-                      );
-                    })}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>종합 인지 점수</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+                          {overallScore >= 65 ? "매우 우수" : overallScore >= 45 ? "양호" : overallScore >= 25 ? "보통" : "훈련 초기"}
+                        </div>
+                      </div>
+                      <div style={{
+                        fontSize: 14, color: "rgba(255,255,255,0.35)",
+                        transition: "transform 0.3s ease",
+                        transform: reportDetailOpen ? "rotate(180deg)" : "rotate(0deg)",
+                        flexShrink: 0,
+                      }}>
+                        ▼
+                      </div>
+                    </div>
+
+                    {/* Expandable metric cards */}
+                    <div style={{
+                      maxHeight: reportDetailOpen ? 500 : 0,
+                      opacity: reportDetailOpen ? 1 : 0,
+                      overflow: "hidden",
+                      transition: "max-height 0.35s ease, opacity 0.25s ease",
+                    }}>
+                      <div style={{
+                        display: "flex", flexDirection: "column", gap: 6,
+                        padding: "0 12px 14px",
+                      }}>
+                        {categories.map((cat) => {
+                          const val = metrics[cat.key];
+                          const trend = metrics[`${cat.key}Trend`];
+                          const improvement = getTrendImprovement(trend);
+                          return (
+                            <div key={cat.key} style={{
+                              display: "flex", alignItems: "center", gap: 10,
+                              padding: "10px 12px", borderRadius: 12,
+                              background: "rgba(255,255,255,0.02)",
+                              border: "1px solid rgba(255,255,255,0.05)",
+                            }}>
+                              <div style={{ position: "relative", flexShrink: 0 }}>
+                                <ProgressRing value={val} color={cat.color} size={42} stroke={3.5} />
+                                <div style={{
+                                  position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  fontSize: 11, fontWeight: 700, color: cat.color,
+                                }}>
+                                  {val}
+                                </div>
+                              </div>
+                              <div style={{ minWidth: 62 }}>
+                                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2 }}>
+                                  {cat.icon} {cat.label}
+                                </div>
+                                <div style={{
+                                  fontSize: 10,
+                                  color: improvement > 0 ? "#00C9A7" : improvement < 0 ? "#FF6B6B" : "rgba(255,255,255,0.3)",
+                                  fontWeight: 600,
+                                }}>
+                                  {improvement > 0 ? `▲ +${improvement}` : improvement < 0 ? `▼ ${improvement}` : "—"}
+                                </div>
+                              </div>
+                              <div style={{ flex: 1, display: "flex", justifyContent: "flex-end" }}>
+                                <Sparkline data={trend} color={cat.color} height={32} width={100} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Prevention Score Bar */}
