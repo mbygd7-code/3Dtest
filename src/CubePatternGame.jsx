@@ -720,6 +720,8 @@ export default function CubePatternGame() {
   // Cognitive Report
   const [showReport, setShowReport] = useState(false);
   const [reportDetailOpen, setReportDetailOpen] = useState(false);
+  const [reportAnimReady, setReportAnimReady] = useState(false);
+  const [detailAnimReady, setDetailAnimReady] = useState(false);
   const [cognitiveHistory, setCognitiveHistory] = useState([]);
   // Round countdown (dynamic per level)
   const levelConfig = getLevelConfig(level);
@@ -2206,7 +2208,7 @@ export default function CubePatternGame() {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <button
-                  onClick={() => setShowReport(true)}
+                  onClick={() => { setShowReport(true); setReportAnimReady(false); setDetailAnimReady(false); setReportDetailOpen(false); setTimeout(() => setReportAnimReady(true), 100); }}
                   style={{
                     padding: "10px 24px", fontSize: 13, fontWeight: 600,
                     fontFamily: "'Outfit', sans-serif",
@@ -2802,7 +2804,7 @@ export default function CubePatternGame() {
                   }}>
                     {/* Score header — clickable */}
                     <div
-                      onClick={() => setReportDetailOpen(v => !v)}
+                      onClick={() => { setReportDetailOpen(v => { if (!v) { setDetailAnimReady(false); setTimeout(() => setDetailAnimReady(true), 100); } return !v; }); }}
                       style={{
                         position: "relative",
                         display: "flex", alignItems: "center", justifyContent: "center",
@@ -2826,13 +2828,13 @@ export default function CubePatternGame() {
                         }} />
                       )}
                       <div style={{ position: "relative" }}>
-                        <ProgressRing value={overallScore} color="#C084FC" size={68} stroke={5} />
+                        <ProgressRing value={reportAnimReady ? overallScore : 0} color="#C084FC" size={68} stroke={5} />
                         <div style={{
                           position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                           display: "flex", alignItems: "center", justifyContent: "center",
                           fontSize: 26, fontWeight: 800, color: "#C084FC",
                         }}>
-                          {overallScore}
+                          {reportAnimReady ? overallScore : 0}
                         </div>
                       </div>
                       <div style={{ flex: 1 }}>
@@ -2874,13 +2876,15 @@ export default function CubePatternGame() {
                               border: "1px solid rgba(255,255,255,0.05)",
                             }}>
                               <div style={{ position: "relative", flexShrink: 0 }}>
-                                <ProgressRing value={val} color={cat.color} size={42} stroke={3.5} />
+                                <ProgressRing value={detailAnimReady ? val : 0} color={cat.color} size={42} stroke={3.5} />
                                 <div style={{
                                   position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                                   display: "flex", alignItems: "center", justifyContent: "center",
                                   fontSize: 14, fontWeight: 700, color: cat.color,
+                                  transition: "opacity 0.5s ease",
+                                  opacity: detailAnimReady ? 1 : 0,
                                 }}>
-                                  {val}
+                                  {detailAnimReady ? val : 0}
                                 </div>
                               </div>
                               <div style={{ minWidth: 62 }}>
@@ -2916,7 +2920,7 @@ export default function CubePatternGame() {
                       display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8,
                     }}>
                       <span style={{ fontSize: 16, fontWeight: 600 }}>🛡️ 인지장애 예방 기여도</span>
-                      <span style={{ fontSize: 21, fontWeight: 800, color: "#00C9A7" }}>{metrics.preventionScore}%</span>
+                      <span style={{ fontSize: 21, fontWeight: 800, color: "#00C9A7" }}>{reportAnimReady ? metrics.preventionScore : 0}%</span>
                     </div>
                     <div style={{
                       height: 6, borderRadius: 3,
@@ -2926,7 +2930,7 @@ export default function CubePatternGame() {
                       <div style={{
                         height: "100%", borderRadius: 3,
                         background: "linear-gradient(90deg, #00C9A7, #4DA8FF)",
-                        width: `${metrics.preventionScore}%`,
+                        width: `${reportAnimReady ? metrics.preventionScore : 0}%`,
                         transition: "width 1s ease-out",
                       }} />
                     </div>
