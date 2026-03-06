@@ -23,6 +23,27 @@ const FACE_CONTENT = {
   number: { front: "1", back: "2", top: "3", bottom: "4", left: "5", right: "6" },
 };
 
+// ─── Level Design (1~10) ───
+// Each level: { patternLength, rounds, timeLimit (ms) }
+const LEVEL_CONFIG = [
+  { patternLength: 3, rounds: 3, timeLimit: 15000 },  // Lv1: 3개 패턴 × 3라운드, 15초
+  { patternLength: 3, rounds: 4, timeLimit: 12000 },  // Lv2: 3개 패턴 × 4라운드, 12초
+  { patternLength: 4, rounds: 3, timeLimit: 12000 },  // Lv3: 4개 패턴 × 3라운드, 12초
+  { patternLength: 4, rounds: 4, timeLimit: 10000 },  // Lv4: 4개 패턴 × 4라운드, 10초
+  { patternLength: 5, rounds: 3, timeLimit: 10000 },  // Lv5: 5개 패턴 × 3라운드, 10초
+  { patternLength: 5, rounds: 4, timeLimit: 9000 },   // Lv6: 5개 패턴 × 4라운드, 9초
+  { patternLength: 6, rounds: 3, timeLimit: 8000 },   // Lv7: 6개 패턴 × 3라운드, 8초
+  { patternLength: 6, rounds: 4, timeLimit: 7000 },   // Lv8: 6개 패턴 × 4라운드, 7초
+  { patternLength: 7, rounds: 3, timeLimit: 7000 },   // Lv9: 7개 패턴 × 3라운드, 7초
+  { patternLength: 8, rounds: 4, timeLimit: 6000 },   // Lv10: 8개 패턴 × 4라운드, 6초
+];
+const MAX_LEVEL = LEVEL_CONFIG.length;
+
+function getLevelConfig(lvl) {
+  const idx = Math.min(lvl, MAX_LEVEL) - 1;
+  return LEVEL_CONFIG[Math.max(0, idx)];
+}
+
 // Safari-compatible 3D style helpers
 const preserve3d = { transformStyle: "preserve-3d", WebkitTransformStyle: "preserve-3d" };
 const hiddenBack = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
@@ -577,6 +598,7 @@ export default function CubePatternGame() {
   const activeInput = useRef(null); // 'pointer' | 'touch' | null
   const [gameState, setGameState] = useState("idle");
   const [level, setLevel] = useState(1);
+  const [currentRound, setCurrentRound] = useState(1); // round within current level
   const [score, setScore] = useState(0);
   const [pattern, setPattern] = useState([]);
   const [showIndex, setShowIndex] = useState(-1);
@@ -610,12 +632,13 @@ export default function CubePatternGame() {
   // Cognitive Report
   const [showReport, setShowReport] = useState(false);
   const [cognitiveHistory, setCognitiveHistory] = useState([]);
-  // Round countdown (10s per question)
-  const ROUND_TIME_LIMIT = 10000;
+  // Round countdown (dynamic per level)
+  const levelConfig = getLevelConfig(level);
+  const ROUND_TIME_LIMIT = levelConfig.timeLimit;
   const [roundTimeLeft, setRoundTimeLeft] = useState(ROUND_TIME_LIMIT);
   const roundTimerRef = useRef(null);
   const roundTimeoutRef = useRef(null);
-  const patternLength = level + 2;
+  const patternLength = levelConfig.patternLength;
   const accuracy = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 100;
 
   // ─── Timer controls ───
@@ -823,6 +846,7 @@ export default function CubePatternGame() {
   const startGame = () => {
     setScore(0);
     setLevel(1);
+    setCurrentRound(1);
     setLives(3);
     setCombo(0);
     maxComboRef.current = 0;
@@ -844,7 +868,7 @@ export default function CubePatternGame() {
     // Phase 3 (2800ms): burst done, switch to breathing
     setTimeout(() => { setGlowEdges(false); setEdgeBreathing(true); }, 2800);
     // Phase 4 (3200ms): game starts + timer starts
-    setTimeout(() => { startTimer(); startRound(1); }, 3200);
+    setTimeout(() => { startTimer(); startRound(1, 1); }, 3200);
   };
   const handleModeSelect = (mode) => {
     if (mode === gameMode) return;
@@ -891,12 +915,14 @@ export default function CubePatternGame() {
       setMessage("모드가 변경되었습니다!");
     }, 2600);
   };
-  const startRound = (lvl) => {
-    const p = generatePattern(lvl + 2);
+  const startRound = (lvl, round) => {
+    const cfg = getLevelConfig(lvl);
+    const p = generatePattern(cfg.patternLength);
     setPattern(p);
     setPlayerInput([]);
     setGameState("showing");
-    setMessage(`레벨 ${lvl} — 패턴을 기억하세요!`);
+    const roundNum = round || currentRound;
+    setMessage(`레벨 ${lvl} (${roundNum}/${cfg.rounds}) — 패턴을 기억하세요!`);
     showPattern(p);
   };
   const showPattern = (p) => {
@@ -1000,13 +1026,50 @@ export default function CubePatternGame() {
         );
         setGameState("correct");
         setTimeout(() => {
-          const nextLvl = level + 1;
-          setLevel(nextLvl);
-          startRound(nextLvl);
+          const cfg = getLevelConfig(level);
+          if (currentRound < cfg.rounds) {
+            // Same level, next round
+            const nextRound = currentRound + 1;
+            setCurrentRound(nextRound);
+            startRound(level, nextRound);
+          } else if (level < MAX_LEVEL) {
+            // Level cleared! Next level
+            const nextLvl = level + 1;
+            setLevel(nextLvl);
+            setCurrentRound(1);
+            setMessage(`🎉 레벨 ${level} 클리어!`);
+            setTimeout(() => startRound(nextLvl, 1), 800);
+          } else {
+            // All 10 levels cleared!
+            stopTimer();
+            setGameState("gameover");
+            setGlowEdges(false);
+            setEdgeBreathing(false);
+            const finalScore = newScore;
+            if (finalScore > bestScore) setBestScore(finalScore);
+            setMessage(`🏆 전 레벨 클리어! 최종 스코어: ${finalScore}`);
+            const entry = {
+              score: finalScore, level: MAX_LEVEL, time: elapsedTime,
+              accuracy: totalAttempts > 0 ? Math.round(((correctAttempts + 1) / (totalAttempts + 1)) * 100) : 100,
+              compositeScore: calculateCompositeScore(finalScore, elapsedTime, totalAttempts > 0 ? Math.round(((correctAttempts + 1) / (totalAttempts + 1)) * 100) : 100),
+              gameMode, date: new Date().toISOString(),
+              playerName: nickname || "익명",
+            };
+            fetchRankingsFromDB().then((r) => {
+              const updated = [...r, entry].sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0)).slice(0, MAX_RANKINGS);
+              persistRankingsLocal(updated);
+              setRankings(updated);
+            });
+            if (user) {
+              insertRankingToDB(entry, user.id);
+              saveCognitiveSession({ score: finalScore, level: MAX_LEVEL, time: elapsedTime, accuracy: entry.accuracy, maxCombo: maxComboRef.current, gameMode }, user.id)
+                .then((hist) => { if (hist) setCognitiveHistory(hist); });
+            }
+          }
         }, 1500);
       }
     },
-    [gameState, playerInput, pattern, score, level, lives, combo, bestScore, totalAttempts, correctAttempts, elapsedTime, gameMode, stopTimer]
+    [gameState, playerInput, pattern, score, level, currentRound, lives, combo, bestScore, totalAttempts, correctAttempts, elapsedTime, gameMode, stopTimer, nickname, user]
   );
 
   // ─── Round timeout handler (keeps fresh closure via ref) ───
@@ -1722,8 +1785,8 @@ export default function CubePatternGame() {
               alignItems: "center",
             }}>
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>LV</div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{level}</div>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>LV {level}</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{currentRound}/{getLevelConfig(level).rounds}</div>
               </div>
               <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
               <div style={{ textAlign: "center" }}>
@@ -1818,7 +1881,7 @@ export default function CubePatternGame() {
               </div>
               <div style={{ fontSize: 56, fontWeight: 800, marginBottom: 4 }}>{score}</div>
               <div style={{ fontSize: 14, color: "rgba(255,255,255,0.5)", marginBottom: 16 }}>
-                레벨 {level}까지 도달 {score >= bestScore && score > 0 ? "— 🏆 새로운 최고 기록!" : ""}
+                {level > MAX_LEVEL ? "🏆 전 레벨 클리어!" : `레벨 ${level}까지 도달`} {score >= bestScore && score > 0 ? "— 새로운 최고 기록!" : ""}
               </div>
               <div style={{
                 display: "flex", gap: 20, justifyContent: "center",
