@@ -2735,13 +2735,13 @@ export default function CubePatternGame() {
               </button>
               {/* Title */}
               <div style={{
-                fontSize: 13, letterSpacing: 4, color: "rgba(255,255,255,0.4)",
+                fontSize: 17, letterSpacing: 4, color: "rgba(255,255,255,0.4)",
                 marginBottom: 6, textAlign: "center", fontWeight: 600, marginTop: -24,
               }}>
                 📊 COGNITIVE REPORT
               </div>
               <div style={{
-                fontSize: 11, color: "rgba(255,255,255,0.3)", textAlign: "center", marginBottom: 20,
+                fontSize: 14, color: "rgba(255,255,255,0.3)", textAlign: "center", marginBottom: 20,
               }}>
                 {metrics.totalSessions > 0 ? `총 ${metrics.totalSessions}회 훈련 기반 분석` : "훈련 기록 없음"}
               </div>
@@ -2751,17 +2751,17 @@ export default function CubePatternGame() {
                 <div style={{
                   padding: "40px 20px", textAlign: "center",
                 }}>
-                  <div style={{ fontSize: 48, marginBottom: 16 }}>🧠</div>
-                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8, color: "rgba(255,255,255,0.7)" }}>
+                  <div style={{ fontSize: 62, marginBottom: 16 }}>🧠</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: "rgba(255,255,255,0.7)" }}>
                     아직 게임 기록이 없습니다
                   </div>
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 16, color: "rgba(255,255,255,0.35)", lineHeight: 1.6 }}>
                     게임을 플레이하면 인지 능력 분석 리포트가<br />이곳에 표시됩니다
                   </div>
                   <button
                     onClick={() => setShowReport(false)}
                     style={{
-                      marginTop: 24, padding: "12px 32px", fontSize: 13, fontWeight: 600,
+                      marginTop: 24, padding: "12px 32px", fontSize: 17, fontWeight: 600,
                       fontFamily: "'Outfit', sans-serif",
                       background: "linear-gradient(135deg, #C084FC, #818CF8)",
                       color: "#fff", border: "none", borderRadius: 12,
@@ -2800,14 +2800,14 @@ export default function CubePatternGame() {
                         <div style={{
                           position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 20, fontWeight: 800, color: "#C084FC",
+                          fontSize: 26, fontWeight: 800, color: "#C084FC",
                         }}>
                           {overallScore}
                         </div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>종합 인지 점수</div>
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 2 }}>종합 인지 점수</div>
+                        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.4)" }}>
                           {overallScore >= 65 ? "매우 우수" : overallScore >= 45 ? "양호" : overallScore >= 25 ? "보통" : "훈련 초기"}
                         </div>
                       </div>
@@ -2823,7 +2823,7 @@ export default function CubePatternGame() {
 
                     {/* Expandable metric cards */}
                     <div style={{
-                      maxHeight: reportDetailOpen ? 500 : 0,
+                      maxHeight: reportDetailOpen ? 700 : 0,
                       opacity: reportDetailOpen ? 1 : 0,
                       overflow: "hidden",
                       transition: "max-height 0.35s ease, opacity 0.25s ease",
@@ -2848,17 +2848,17 @@ export default function CubePatternGame() {
                                 <div style={{
                                   position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                                   display: "flex", alignItems: "center", justifyContent: "center",
-                                  fontSize: 11, fontWeight: 700, color: cat.color,
+                                  fontSize: 14, fontWeight: 700, color: cat.color,
                                 }}>
                                   {val}
                                 </div>
                               </div>
                               <div style={{ minWidth: 62 }}>
-                                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2 }}>
+                                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>
                                   {cat.icon} {cat.label}
                                 </div>
                                 <div style={{
-                                  fontSize: 10,
+                                  fontSize: 13,
                                   color: improvement > 0 ? "#00C9A7" : improvement < 0 ? "#FF6B6B" : "rgba(255,255,255,0.3)",
                                   fontWeight: 600,
                                 }}>
@@ -2885,8 +2885,8 @@ export default function CubePatternGame() {
                     <div style={{
                       display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8,
                     }}>
-                      <span style={{ fontSize: 12, fontWeight: 600 }}>🛡️ 인지장애 예방 기여도</span>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: "#00C9A7" }}>{metrics.preventionScore}%</span>
+                      <span style={{ fontSize: 16, fontWeight: 600 }}>🛡️ 인지장애 예방 기여도</span>
+                      <span style={{ fontSize: 21, fontWeight: 800, color: "#00C9A7" }}>{metrics.preventionScore}%</span>
                     </div>
                     <div style={{
                       height: 6, borderRadius: 3,
@@ -2912,11 +2912,11 @@ export default function CubePatternGame() {
                     <div style={{
                       display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
                     }}>
-                      <span style={{ fontSize: 20 }}>🩺</span>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>전문가 소견</span>
+                      <span style={{ fontSize: 26 }}>🩺</span>
+                      <span style={{ fontSize: 20, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>전문가 소견</span>
                     </div>
                     <p style={{
-                      fontSize: 14, lineHeight: 1.8,
+                      fontSize: 18, lineHeight: 1.8,
                       color: "rgba(255,255,255,0.55)",
                       margin: 0,
                       wordBreak: "keep-all",
