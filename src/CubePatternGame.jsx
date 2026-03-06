@@ -1474,10 +1474,7 @@ export default function CubePatternGame() {
         paddingRight: "env(safe-area-inset-right)",
       }}
     >
-      <link
-        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap"
-        rel="stylesheet"
-      />
+      {/* Font loaded from index.html <head> for reliable cross-device rendering */}
       <style>{`
         @keyframes dotPulse {
           0% { transform: scale(0.5); opacity: 0; }
