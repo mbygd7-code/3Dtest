@@ -2335,18 +2335,16 @@ export default function CubePatternGame() {
                   로그아웃
                 </button>
               )}
+              <div style={{
+                marginTop: 12, fontSize: 11, color: "rgba(255,255,255,0.3)",
+                letterSpacing: 1,
+              }}>
+                v1.0.0
+              </div>
             </div>
           )}
         </div>
       )}
-      {/* Version info */}
-      <div style={{
-        textAlign: "center", padding: "16px 0 8px",
-        fontSize: 11, color: "rgba(255,255,255,0.15)",
-        letterSpacing: 1,
-      }}>
-        v1.0.0
-      </div>
       {/* ─── PROFILE MODAL ─── */}
       {showProfileModal && (
         <div
