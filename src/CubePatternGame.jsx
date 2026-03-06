@@ -44,148 +44,87 @@ function getLevelConfig(lvl) {
   return LEVEL_CONFIG[Math.max(0, idx)];
 }
 
-// ─── Web Audio Sound System (iOS compatible) ───
-const SoundEngine = (() => {
-  let ctx = null;
-  let unlocked = false;
-
-  const getCtx = () => {
-    if (!ctx) {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    return ctx;
-  };
-
-  // iOS requires AudioContext.resume() after a user gesture
-  const unlock = () => {
-    if (unlocked) return;
-    const c = getCtx();
-    if (c.state === "suspended") c.resume();
-    // Play silent buffer to fully unlock on iOS
-    const buf = c.createBuffer(1, 1, 22050);
-    const src = c.createBufferSource();
-    src.buffer = buf;
-    src.connect(c.destination);
-    src.start(0);
-    unlocked = true;
-  };
-
-  // Attach unlock to first user interaction
-  if (typeof window !== "undefined") {
-    const events = ["touchstart", "touchend", "mousedown", "click"];
-    const handler = () => {
-      unlock();
-      events.forEach((e) => window.removeEventListener(e, handler, true));
-    };
-    events.forEach((e) => window.addEventListener(e, handler, true));
-  }
-
-  const playTone = (freq, duration, type = "sine", vol = 0.15, delay = 0) => {
-    try {
-      const c = getCtx();
-      if (c.state === "suspended") c.resume();
-      const osc = c.createOscillator();
-      const gain = c.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, c.currentTime + delay);
-      gain.gain.setValueAtTime(vol, c.currentTime + delay);
-      gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + delay + duration);
-      osc.connect(gain);
-      gain.connect(c.destination);
-      osc.start(c.currentTime + delay);
-      osc.stop(c.currentTime + delay + duration);
-    } catch (e) { /* silent fail */ }
-  };
-
-  const playNoise = (duration, vol = 0.08) => {
-    try {
-      const c = getCtx();
-      if (c.state === "suspended") c.resume();
-      const bufferSize = c.sampleRate * duration;
-      const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-      const src = c.createBufferSource();
-      src.buffer = buffer;
-      const gain = c.createGain();
-      gain.gain.setValueAtTime(vol, c.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + duration);
-      const filter = c.createBiquadFilter();
-      filter.type = "highpass";
-      filter.frequency.value = 3000;
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(c.destination);
-      src.start();
-    } catch (e) { /* silent fail */ }
-  };
-
-  return {
-    unlock,
-    // 면 터치 (짧은 클릭음)
-    tap: () => playTone(800, 0.08, "sine", 0.12),
-    // 패턴 보여줄 때 (각 스텝마다 음계 다르게)
-    patternStep: (index) => {
-      const notes = [523, 587, 659, 698, 784, 880, 988, 1047]; // C5~C6
-      const freq = notes[index % notes.length];
-      playTone(freq, 0.2, "sine", 0.15);
-    },
-    // 정답
-    correct: () => {
-      playTone(523, 0.12, "sine", 0.15, 0);
-      playTone(659, 0.12, "sine", 0.15, 0.08);
-      playTone(784, 0.2, "sine", 0.18, 0.16);
-    },
-    // 콤보 (더 화려한 아르페지오)
-    combo: () => {
-      playTone(523, 0.1, "sine", 0.12, 0);
-      playTone(659, 0.1, "sine", 0.12, 0.06);
-      playTone(784, 0.1, "sine", 0.14, 0.12);
-      playTone(1047, 0.25, "triangle", 0.18, 0.18);
-    },
-    // 오답
-    wrong: () => {
-      playTone(200, 0.2, "sawtooth", 0.1, 0);
-      playTone(180, 0.3, "sawtooth", 0.08, 0.1);
-    },
-    // 레벨업
-    levelUp: () => {
-      playTone(523, 0.1, "sine", 0.12, 0);
-      playTone(659, 0.1, "sine", 0.12, 0.1);
-      playTone(784, 0.1, "sine", 0.14, 0.2);
-      playTone(1047, 0.15, "sine", 0.16, 0.3);
-      playTone(1318, 0.3, "triangle", 0.18, 0.4);
-    },
-    // 게임오버
-    gameOver: () => {
-      playTone(440, 0.3, "sine", 0.12, 0);
-      playTone(370, 0.3, "sine", 0.12, 0.25);
-      playTone(330, 0.3, "sine", 0.12, 0.5);
-      playTone(262, 0.5, "sine", 0.15, 0.75);
-    },
-    // 시간 초과 경고 (3초 남았을 때)
-    timeWarning: () => playTone(1000, 0.08, "square", 0.06),
-    // 게임 시작
-    gameStart: () => {
-      playTone(523, 0.1, "sine", 0.1, 0);
-      playTone(659, 0.1, "sine", 0.1, 0.1);
-      playTone(784, 0.15, "sine", 0.12, 0.2);
-    },
-    // 전체 클리어 (승리 팡파레)
-    victory: () => {
-      playTone(523, 0.15, "sine", 0.12, 0);
-      playTone(659, 0.15, "sine", 0.12, 0.12);
-      playTone(784, 0.15, "sine", 0.14, 0.24);
-      playTone(1047, 0.2, "sine", 0.16, 0.36);
-      playTone(1318, 0.15, "triangle", 0.14, 0.5);
-      playTone(1568, 0.4, "triangle", 0.18, 0.62);
-    },
-  };
-})();
-
 // Safari-compatible 3D style helpers
 const preserve3d = { transformStyle: "preserve-3d", WebkitTransformStyle: "preserve-3d" };
 const hiddenBack = { backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" };
+
+// ─── Sound Engine (Web Audio API) ───
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (_audioCtx.state === "suspended") _audioCtx.resume();
+  return _audioCtx;
+}
+
+const FACE_NOTES = {
+  front: 523.25,  // C5
+  back: 587.33,   // D5
+  top: 659.25,    // E5
+  bottom: 698.46, // F5
+  left: 783.99,   // G5
+  right: 880.00,  // A5
+};
+
+function playTone(freq, duration = 0.15, type = "sine", volume = 0.3) {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    gain.gain.setValueAtTime(volume, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + duration);
+  } catch {}
+}
+
+function playFaceSound(faceKey) {
+  playTone(FACE_NOTES[faceKey] || 523.25, 0.2, "sine", 0.25);
+}
+
+function playCorrectSound() {
+  const ctx = getAudioCtx();
+  [523.25, 659.25, 783.99].forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.15, "sine", 0.25), i * 80);
+  });
+}
+
+function playWrongSound() {
+  playTone(200, 0.3, "sawtooth", 0.2);
+  setTimeout(() => playTone(180, 0.3, "sawtooth", 0.2), 100);
+}
+
+function playComboSound(comboCount) {
+  const base = 600 + comboCount * 50;
+  [0, 1, 2].forEach((i) => {
+    setTimeout(() => playTone(base + i * 100, 0.12, "triangle", 0.2), i * 60);
+  });
+}
+
+function playLevelUpSound() {
+  [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.2, "sine", 0.25), i * 100);
+  });
+}
+
+function playGameOverSound() {
+  [400, 350, 300, 250].forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.3, "triangle", 0.2), i * 150);
+  });
+}
+
+function playStartSound() {
+  [392, 523.25, 659.25, 783.99].forEach((freq, i) => {
+    setTimeout(() => playTone(freq, 0.15, "sine", 0.3), i * 80);
+  });
+}
+
+function playTickSound() {
+  playTone(1000, 0.05, "square", 0.15);
+}
 
 // ─── Timer formatting ───
 function formatTime(ms) {
@@ -777,9 +716,6 @@ export default function CubePatternGame() {
   const [roundTimeLeft, setRoundTimeLeft] = useState(ROUND_TIME_LIMIT);
   const roundTimerRef = useRef(null);
   const roundTimeoutRef = useRef(null);
-  // Track round elapsed time (seconds the player took to complete current round)
-  const roundStartTimeRef = useRef(0);
-  const [roundElapsed, setRoundElapsed] = useState(null); // null = not yet completed a round
   const patternLength = levelConfig.patternLength;
   const accuracy = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 100;
 
@@ -971,10 +907,15 @@ export default function CubePatternGame() {
     if (gameState === "input") {
       setRoundTimeLeft(ROUND_TIME_LIMIT);
       const start = Date.now();
-      roundStartTimeRef.current = start;
+      let lastTickSec = -1;
       roundTimerRef.current = setInterval(() => {
         const remaining = Math.max(0, ROUND_TIME_LIMIT - (Date.now() - start));
         setRoundTimeLeft(remaining);
+        const secLeft = Math.ceil(remaining / 1000);
+        if (secLeft <= 3 && secLeft > 0 && secLeft !== lastTickSec) {
+          lastTickSec = secLeft;
+          playTickSound();
+        }
       }, 50);
       roundTimeoutRef.current = setTimeout(() => {
         // Time's up — call the handler ref (always has fresh closure)
@@ -986,17 +927,8 @@ export default function CubePatternGame() {
     return () => clearRoundTimer();
   }, [gameState, clearRoundTimer]);
 
-  // ─── Time warning beep at 3 seconds ───
-  const timeWarningFired = useRef(false);
-  useEffect(() => {
-    if (gameState === "input" && roundTimeLeft <= 3000 && roundTimeLeft > 0 && !timeWarningFired.current) {
-      timeWarningFired.current = true;
-      SoundEngine.timeWarning();
-    }
-    if (gameState !== "input") timeWarningFired.current = false;
-  }, [gameState, roundTimeLeft]);
-
   const startGame = () => {
+    playStartSound();
     setScore(0);
     setLevel(1);
     setCurrentRound(1);
@@ -1006,7 +938,6 @@ export default function CubePatternGame() {
     setTotalAttempts(0);
     setCorrectAttempts(0);
     resetTimer();
-    setRoundElapsed(null);
     setShowRanking(false);
     setShowReport(false);
     setRotX(-20);
@@ -1022,7 +953,7 @@ export default function CubePatternGame() {
     // Phase 3 (2800ms): burst done, switch to breathing
     setTimeout(() => { setGlowEdges(false); setEdgeBreathing(true); }, 2800);
     // Phase 4 (3200ms): game starts + timer starts
-    setTimeout(() => { SoundEngine.gameStart(); startTimer(); startRound(1, 1); }, 3200);
+    setTimeout(() => { startTimer(); startRound(1, 1); }, 3200);
   };
   const handleModeSelect = (mode) => {
     if (mode === gameMode) return;
@@ -1086,7 +1017,7 @@ export default function CubePatternGame() {
       if (i < p.length) {
         setShowIndex(i);
         setHighlightFace(p[i]);
-        SoundEngine.patternStep(i);
+        playFaceSound(p[i]);
         setTimeout(() => {
           setHighlightFace(null);
         }, 500);
@@ -1103,7 +1034,7 @@ export default function CubePatternGame() {
     (faceKey) => {
       if (gameState !== "input") return;
       if (isDragMove.current) return;
-      SoundEngine.tap();
+      playFaceSound(faceKey);
       setTotalAttempts((prev) => prev + 1);
       const newInput = [...playerInput, faceKey];
       setPlayerInput(newInput);
@@ -1114,12 +1045,12 @@ export default function CubePatternGame() {
         const newLives = lives - 1;
         setLives(newLives);
         setCombo(0);
+        playWrongSound();
         setShakeAnim(true);
         setTimeout(() => setShakeAnim(false), 500);
-        SoundEngine.wrong();
         if (newLives <= 0) {
-          setTimeout(() => SoundEngine.gameOver(), 300);
           stopTimer();
+          playGameOverSound();
           setGameState("gameover");
           setGlowEdges(false);
           setEdgeBreathing(false);
@@ -1170,11 +1101,6 @@ export default function CubePatternGame() {
       }
       setCorrectAttempts((prev) => prev + 1);
       if (newInput.length === pattern.length) {
-        // Record how long this round took
-        if (roundStartTimeRef.current > 0) {
-          const elapsed = Math.round((Date.now() - roundStartTimeRef.current) / 100) / 10; // 소수점 1자리
-          setRoundElapsed(elapsed);
-        }
         const newCombo = combo + 1;
         setCombo(newCombo);
         if (newCombo > maxComboRef.current) maxComboRef.current = newCombo;
@@ -1182,8 +1108,8 @@ export default function CubePatternGame() {
         const earned = level * 100 + bonus;
         const newScore = score + earned;
         setScore(newScore);
-        // Sound: combo or correct
-        if (newCombo >= 2) { SoundEngine.combo(); } else { SoundEngine.correct(); }
+        if (newCombo >= 2) playComboSound(newCombo);
+        else playCorrectSound();
         setMessage(
           bonus > 0
             ? `🔥 ${newCombo}콤보! +${earned}점`
@@ -1199,7 +1125,7 @@ export default function CubePatternGame() {
             startRound(level, nextRound);
           } else if (level < MAX_LEVEL) {
             // Level cleared! Next level
-            SoundEngine.levelUp();
+            playLevelUpSound();
             const nextLvl = level + 1;
             setLevel(nextLvl);
             setCurrentRound(1);
@@ -1207,8 +1133,8 @@ export default function CubePatternGame() {
             setTimeout(() => startRound(nextLvl, 1), 800);
           } else {
             // All 10 levels cleared!
-            SoundEngine.victory();
             stopTimer();
+            playLevelUpSound();
             setGameState("gameover");
             setGlowEdges(false);
             setEdgeBreathing(false);
@@ -1249,9 +1175,7 @@ export default function CubePatternGame() {
     setCombo(0);
     setShakeAnim(true);
     setTimeout(() => setShakeAnim(false), 500);
-    SoundEngine.wrong();
     if (newLives <= 0) {
-      setTimeout(() => SoundEngine.gameOver(), 300);
       stopTimer();
       setGameState("gameover");
       setGlowEdges(false);
@@ -1643,7 +1567,10 @@ export default function CubePatternGame() {
         paddingRight: "env(safe-area-inset-right)",
       }}
     >
-      {/* Font loaded from index.html <head> for reliable cross-device rendering */}
+      <link
+        href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap"
+        rel="stylesheet"
+      />
       <style>{`
         @keyframes dotPulse {
           0% { transform: scale(0.5); opacity: 0; }
@@ -1969,14 +1896,6 @@ export default function CubePatternGame() {
               <div style={{ textAlign: "center" }}>
                 <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>TIME</div>
                 <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatTime(elapsedTime)}</div>
-                {roundElapsed !== null && (
-                  <div style={{
-                    fontSize: 10, fontWeight: 600, color: roundElapsed <= 3 ? "#00C9A7" : roundElapsed <= 6 ? "#FFD93D" : "#FF8A5C",
-                    marginTop: 2, fontVariantNumeric: "tabular-nums",
-                  }}>
-                    ⚡ {roundElapsed}초
-                  </div>
-                )}
               </div>
               {combo >= 2 && (
                 <>
@@ -2301,93 +2220,30 @@ export default function CubePatternGame() {
                   </button>
                 )}
               </div>
-              {gameState === "gameover" ? (
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  {/* 게임 종료 → 시작화면 */}
-                  <button
-                    onClick={() => {
-                      setGameState("idle");
-                      setMessage("");
-                      setGlowEdges(false);
-                      setEdgeBreathing(false);
-                      setCubeUnfolded(false);
-                      setRoundElapsed(null);
-                    }}
-                    style={{
-                      padding: "16px 28px", fontSize: 15, fontWeight: 700,
-                      fontFamily: "'Outfit', sans-serif",
-                      background: "rgba(255,255,255,0.06)",
-                      color: "rgba(255,255,255,0.7)",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                      borderRadius: 16,
-                      cursor: "pointer", letterSpacing: 1,
-                      transition: "all 0.2s",
-                      WebkitAppearance: "none",
-                      WebkitTapHighlightColor: "transparent",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.background = "rgba(255,255,255,0.1)";
-                      e.target.style.transform = "scale(1.03)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.background = "rgba(255,255,255,0.06)";
-                      e.target.style.transform = "scale(1)";
-                    }}
-                  >
-                    게임 종료
-                  </button>
-                  {/* 다시 도전 */}
-                  <button
-                    onClick={startGame}
-                    style={{
-                      padding: "16px 36px", fontSize: 16, fontWeight: 700,
-                      fontFamily: "'Outfit', sans-serif",
-                      background: "linear-gradient(135deg, #FF3B5C, #FF6B8A, #FF8A5C)",
-                      color: "#fff", border: "none", borderRadius: 16,
-                      cursor: "pointer", letterSpacing: 1,
-                      boxShadow: "0 4px 24px rgba(255,59,92,0.4), 0 0 40px rgba(255,59,92,0.12)",
-                      transition: "transform 0.2s, box-shadow 0.2s",
-                      WebkitAppearance: "none",
-                      WebkitTapHighlightColor: "transparent",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.target.style.transform = "scale(1.05)";
-                      e.target.style.boxShadow = "0 6px 32px rgba(255,59,92,0.5)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.target.style.transform = "scale(1)";
-                      e.target.style.boxShadow = "0 4px 24px rgba(255,59,92,0.4)";
-                    }}
-                  >
-                    다시 도전
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={startGame}
-                  style={{
-                    padding: "16px 52px", fontSize: 16, fontWeight: 700,
-                    fontFamily: "'Outfit', sans-serif",
-                    background: "linear-gradient(135deg, #FF3B5C, #FF6B8A, #FF8A5C)",
-                    color: "#fff", border: "none", borderRadius: 16,
-                    cursor: "pointer", letterSpacing: 1,
-                    boxShadow: "0 4px 24px rgba(255,59,92,0.4), 0 0 40px rgba(255,59,92,0.12)",
-                    transition: "transform 0.2s, box-shadow 0.2s, opacity 0.4s",
-                    WebkitAppearance: "none",
-                    WebkitTapHighlightColor: "transparent",
-                  }}
-                  onMouseEnter={(e) => {
-                    e.target.style.transform = "scale(1.05)";
-                    e.target.style.boxShadow = "0 6px 32px rgba(255,59,92,0.5)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.target.style.transform = "scale(1)";
-                    e.target.style.boxShadow = "0 4px 24px rgba(255,59,92,0.4)";
-                  }}
-                >
-                  게임 시작
-                </button>
-              )}
+              <button
+                onClick={startGame}
+                style={{
+                  padding: "16px 52px", fontSize: 16, fontWeight: 700,
+                  fontFamily: "'Outfit', sans-serif",
+                  background: "linear-gradient(135deg, #FF3B5C, #FF6B8A, #FF8A5C)",
+                  color: "#fff", border: "none", borderRadius: 16,
+                  cursor: "pointer", letterSpacing: 1,
+                  boxShadow: "0 4px 24px rgba(255,59,92,0.4), 0 0 40px rgba(255,59,92,0.12)",
+                  transition: "transform 0.2s, box-shadow 0.2s, opacity 0.4s",
+                  WebkitAppearance: "none",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = "scale(1.05)";
+                  e.target.style.boxShadow = "0 6px 32px rgba(255,59,92,0.5)";
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = "scale(1)";
+                  e.target.style.boxShadow = "0 4px 24px rgba(255,59,92,0.4)";
+                }}
+              >
+                {gameState === "gameover" ? "다시 도전" : "게임 시작"}
+              </button>
               {/* Logout button — subtle, below start */}
               {nickname && (
                 <button
