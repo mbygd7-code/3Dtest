@@ -3175,52 +3175,6 @@ export default function CubePatternGame() {
               ))}
             </div>
 
-            {/* Current Top 3 */}
-            <div style={{
-              marginBottom: 18,
-              animation: "eventSlideUp 0.5s ease-out 0.5s both",
-            }}>
-              <div style={{
-                fontSize: 10, letterSpacing: 3, color: "rgba(255,255,255,0.3)",
-                fontWeight: 600, marginBottom: 10,
-              }}>🏆 CURRENT TOP 3</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {rankings.slice(0, 3).map((entry, i) => {
-                  const uid = entry.userId;
-                  const profile = top3Avatars[uid];
-                  const avatarSrc = profile?.avatar;
-                  const displayName = profile?.name || entry.playerName || "Anonymous";
-                  const medals = ["🥇", "🥈", "🥉"];
-                  const borderColors = ["rgba(255,215,0,0.4)", "rgba(192,192,192,0.4)", "rgba(205,127,50,0.4)"];
-                  const bgColors = ["rgba(255,215,0,0.06)", "rgba(192,192,192,0.04)", "rgba(205,127,50,0.04)"];
-                  return (
-                    <div key={i} style={{
-                      display: "flex", alignItems: "center", gap: 10,
-                      padding: "10px 14px", borderRadius: 14,
-                      background: bgColors[i], border: `1px solid ${borderColors[i]}`,
-                    }}>
-                      <span style={{ fontSize: 20, width: 26 }}>{medals[i]}</span>
-                      <div style={{
-                        width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
-                        background: avatarSrc
-                          ? `url(${avatarSrc}) center/cover no-repeat`
-                          : "linear-gradient(135deg, #C084FC, #818CF8)",
-                        border: `2px solid ${borderColors[i]}`,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        fontSize: 14, color: "#fff", fontWeight: 700,
-                      }}>
-                        {!avatarSrc && displayName.charAt(0).toUpperCase()}
-                      </div>
-                      <div style={{ flex: 1, textAlign: "left" }}>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{displayName}</div>
-                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{entry.compositeScore} pts</div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
             {/* CTA */}
             <button
               onClick={() => setShowEventModal(false)}
