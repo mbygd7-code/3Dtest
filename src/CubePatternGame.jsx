@@ -2325,9 +2325,9 @@ export default function CubePatternGame() {
                 <button
                   onClick={handleLogout}
                   style={{
-                    marginTop: 16, padding: "7px 18px", fontSize: 11, fontWeight: 500,
-                    fontFamily: "'Outfit', sans-serif", background: "transparent",
-                    color: "rgba(255,255,255,0.25)", border: "1px solid rgba(255,255,255,0.06)",
+                    marginTop: 16, padding: "8px 22px", fontSize: 12, fontWeight: 500,
+                    fontFamily: "'Outfit', sans-serif", background: "rgba(255,255,255,0.05)",
+                    color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.15)",
                     borderRadius: 20, cursor: "pointer", letterSpacing: 1, transition: "all 0.2s",
                     WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
                   }}
