@@ -2675,19 +2675,28 @@ export default function CubePatternGame() {
         };
         return (
           <div
-            onClick={() => setShowReport(false)}
             style={{
               position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
               background: "rgba(0,0,0,0.75)",
               backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
-              display: "flex", alignItems: "flex-start", justifyContent: "center",
               zIndex: 999,
+              overflow: "hidden",
               animation: "modalBackdropIn 0.25s ease-out",
-              overflowY: "auto",
-              WebkitOverflowScrolling: "touch",
-              padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
             }}
           >
+            <div
+              onClick={() => setShowReport(false)}
+              style={{
+                position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                overflowY: "scroll",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              <div style={{
+                minHeight: "100%",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                padding: "20px env(safe-area-inset-right) 20px env(safe-area-inset-left)",
+              }}>
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -2698,7 +2707,6 @@ export default function CubePatternGame() {
                 border: "1px solid rgba(255,255,255,0.1)",
                 boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(192,132,252,0.08)",
                 maxWidth: 420, width: "92%",
-                margin: "auto 0",
                 flexShrink: 0,
                 animation: "modalFadeIn 0.3s cubic-bezier(0.34, 1.3, 0.64, 1)",
                 fontFamily: "'Outfit', sans-serif",
@@ -2919,6 +2927,8 @@ export default function CubePatternGame() {
                   </div>
                 </div>
               )}
+            </div>
+              </div>
             </div>
           </div>
         );
