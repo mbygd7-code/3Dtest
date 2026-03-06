@@ -186,7 +186,7 @@ async function fetchRankingsFromDB() {
   try {
     const { data, error } = await supabase
       .from("rankings")
-      .select("*, profiles(nickname)")
+      .select("*, profiles!left(nickname)")
       .order("composite_score", { ascending: false });
     if (error) throw error;
     const all = (data || []).map((r) => ({
