@@ -186,14 +186,14 @@ async function fetchRankingsFromDB() {
   try {
     const { data, error } = await supabase
       .from("rankings")
-      .select("*, profiles!left(nickname)")
+      .select("*")
       .order("composite_score", { ascending: false });
     if (error) throw error;
     const all = (data || []).map((r) => ({
       score: r.score, level: r.level, time: r.time,
       accuracy: r.accuracy, compositeScore: r.composite_score,
       gameMode: r.game_mode, date: r.created_at,
-      playerName: r.profiles?.nickname || r.player_name || "익명",
+      playerName: r.player_name || "익명",
       userId: r.user_id,
     }));
     return filterBestPerUser(all).slice(0, MAX_RANKINGS);
