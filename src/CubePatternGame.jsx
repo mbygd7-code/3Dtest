@@ -2221,30 +2221,93 @@ export default function CubePatternGame() {
                   </button>
                 )}
               </div>
-              <button
-                onClick={startGame}
-                style={{
-                  padding: "16px 52px", fontSize: 16, fontWeight: 700,
-                  fontFamily: "'Outfit', sans-serif",
-                  background: "linear-gradient(135deg, #FF3B5C, #FF6B8A, #FF8A5C)",
-                  color: "#fff", border: "none", borderRadius: 16,
-                  cursor: "pointer", letterSpacing: 1,
-                  boxShadow: "0 4px 24px rgba(255,59,92,0.4), 0 0 40px rgba(255,59,92,0.12)",
-                  transition: "transform 0.2s, box-shadow 0.2s, opacity 0.4s",
-                  WebkitAppearance: "none",
-                  WebkitTapHighlightColor: "transparent",
-                }}
-                onMouseEnter={(e) => {
-                  e.target.style.transform = "scale(1.05)";
-                  e.target.style.boxShadow = "0 6px 32px rgba(255,59,92,0.5)";
-                }}
-                onMouseLeave={(e) => {
-                  e.target.style.transform = "scale(1)";
-                  e.target.style.boxShadow = "0 4px 24px rgba(255,59,92,0.4)";
-                }}
-              >
-                {gameState === "gameover" ? "다시 도전" : "게임 시작"}
-              </button>
+              {gameState === "gameover" ? (
+                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                  {/* 게임 종료 → 시작화면 */}
+                  <button
+                    onClick={() => {
+                      setGameState("idle");
+                      setMessage("");
+                      setGlowEdges(false);
+                      setEdgeBreathing(false);
+                      setCubeUnfolded(false);
+                      setRoundElapsed(null);
+                    }}
+                    style={{
+                      padding: "16px 28px", fontSize: 15, fontWeight: 700,
+                      fontFamily: "'Outfit', sans-serif",
+                      background: "rgba(255,255,255,0.06)",
+                      color: "rgba(255,255,255,0.7)",
+                      border: "1px solid rgba(255,255,255,0.15)",
+                      borderRadius: 16,
+                      cursor: "pointer", letterSpacing: 1,
+                      transition: "all 0.2s",
+                      WebkitAppearance: "none",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.background = "rgba(255,255,255,0.1)";
+                      e.target.style.transform = "scale(1.03)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.background = "rgba(255,255,255,0.06)";
+                      e.target.style.transform = "scale(1)";
+                    }}
+                  >
+                    게임 종료
+                  </button>
+                  {/* 다시 도전 */}
+                  <button
+                    onClick={startGame}
+                    style={{
+                      padding: "16px 36px", fontSize: 16, fontWeight: 700,
+                      fontFamily: "'Outfit', sans-serif",
+                      background: "linear-gradient(135deg, #FF3B5C, #FF6B8A, #FF8A5C)",
+                      color: "#fff", border: "none", borderRadius: 16,
+                      cursor: "pointer", letterSpacing: 1,
+                      boxShadow: "0 4px 24px rgba(255,59,92,0.4), 0 0 40px rgba(255,59,92,0.12)",
+                      transition: "transform 0.2s, box-shadow 0.2s",
+                      WebkitAppearance: "none",
+                      WebkitTapHighlightColor: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.transform = "scale(1.05)";
+                      e.target.style.boxShadow = "0 6px 32px rgba(255,59,92,0.5)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.transform = "scale(1)";
+                      e.target.style.boxShadow = "0 4px 24px rgba(255,59,92,0.4)";
+                    }}
+                  >
+                    다시 도전
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={startGame}
+                  style={{
+                    padding: "16px 52px", fontSize: 16, fontWeight: 700,
+                    fontFamily: "'Outfit', sans-serif",
+                    background: "linear-gradient(135deg, #FF3B5C, #FF6B8A, #FF8A5C)",
+                    color: "#fff", border: "none", borderRadius: 16,
+                    cursor: "pointer", letterSpacing: 1,
+                    boxShadow: "0 4px 24px rgba(255,59,92,0.4), 0 0 40px rgba(255,59,92,0.12)",
+                    transition: "transform 0.2s, box-shadow 0.2s, opacity 0.4s",
+                    WebkitAppearance: "none",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.transform = "scale(1.05)";
+                    e.target.style.boxShadow = "0 6px 32px rgba(255,59,92,0.5)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.transform = "scale(1)";
+                    e.target.style.boxShadow = "0 4px 24px rgba(255,59,92,0.4)";
+                  }}
+                >
+                  게임 시작
+                </button>
+              )}
               {/* Logout button — subtle, below start */}
               {nickname && (
                 <button
