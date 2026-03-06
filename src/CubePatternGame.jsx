@@ -145,6 +145,15 @@ function calculateCompositeScore(score, timeMs, accuracy) {
   return Math.round((score + timeBonus) * accuracyMultiplier);
 }
 
+// ─── D-Day calculation ───
+function getDDayCount() {
+  const event = new Date(2026, 2, 30); // 2026.03.30
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  event.setHours(0, 0, 0, 0);
+  return Math.ceil((event - today) / (1000 * 60 * 60 * 24));
+}
+
 // ─── Device ID for identifying this browser ───
 const DEVICE_ID_KEY = "cubePatternDeviceId";
 function getDeviceId() {
@@ -756,6 +765,9 @@ export default function CubePatternGame() {
   const [reportAnimReady, setReportAnimReady] = useState(false);
   const [detailAnimReady, setDetailAnimReady] = useState(false);
   const [cognitiveHistory, setCognitiveHistory] = useState([]);
+  // Event modal
+  const [showEventModal, setShowEventModal] = useState(true);
+  const [top3Avatars, setTop3Avatars] = useState({});
   // Round countdown (dynamic per level)
   const levelConfig = getLevelConfig(level);
   const ROUND_TIME_LIMIT = levelConfig.timeLimit;
@@ -853,6 +865,25 @@ export default function CubePatternGame() {
       }
     })();
   }, [user]);
+
+  // ─── Fetch top 3 user avatars when rankings change ───
+  useEffect(() => {
+    if (rankings.length === 0) return;
+    const top3 = rankings.slice(0, 3);
+    const userIds = top3.map(r => r.userId).filter(Boolean);
+    if (userIds.length === 0) return;
+    (async () => {
+      const avatarMap = {};
+      await Promise.all(userIds.map(async (uid) => {
+        const [avatar, name] = await Promise.all([
+          fetchAvatarUrl(uid),
+          fetchNickname(uid),
+        ]);
+        avatarMap[uid] = { avatar, name };
+      }));
+      setTop3Avatars(avatarMap);
+    })();
+  }, [rankings]);
 
   // ─── Auth handlers ───
   const handleSignUp = async () => {
@@ -1711,6 +1742,18 @@ export default function CubePatternGame() {
           0% { opacity: 0; transform: translateY(20px) scale(0.95); }
           100% { opacity: 1; transform: translateY(0) scale(1); }
         }
+        @keyframes eventPulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.08); }
+        }
+        @keyframes eventGlow {
+          0%, 100% { box-shadow: 0 0 20px rgba(255,215,0,0.2); }
+          50% { box-shadow: 0 0 40px rgba(255,215,0,0.4), 0 0 60px rgba(255,215,0,0.1); }
+        }
+        @keyframes eventSlideUp {
+          0% { opacity: 0; transform: translateY(16px); }
+          100% { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
       {/* Background orbs */}
       <div style={{
@@ -2075,6 +2118,57 @@ export default function CubePatternGame() {
                 }}>
                   <span style={{ fontSize: 10, color: "rgba(255,215,0,0.5)", letterSpacing: 2, fontWeight: 600 }}>BEST</span>
                   <span style={{ fontSize: 15, fontWeight: 700, color: "#FFD93D" }}>{bestScore}</span>
+                </div>
+              )}
+
+              {/* Top 3 Mini Leaderboard */}
+              {rankings.length > 0 && (
+                <div style={{
+                  marginTop: 14, display: "inline-flex", flexDirection: "column", gap: 5,
+                  padding: "10px 16px", background: "rgba(255,255,255,0.02)",
+                  borderRadius: 14, border: "1px solid rgba(255,255,255,0.06)",
+                  minWidth: 220,
+                }}>
+                  <div style={{
+                    fontSize: 9, letterSpacing: 3, color: "rgba(255,255,255,0.25)",
+                    fontWeight: 600, marginBottom: 2, textAlign: "center",
+                  }}>🏆 TOP RANKING</div>
+                  {rankings.slice(0, 3).map((entry, i) => {
+                    const uid = entry.userId;
+                    const profile = top3Avatars[uid];
+                    const avatarSrc = profile?.avatar;
+                    const displayName = profile?.name || entry.playerName || "Anonymous";
+                    const medals = ["🥇", "🥈", "🥉"];
+                    const colors = ["#FFD93D", "#C0C0C0", "#CD7F32"];
+                    return (
+                      <div key={i} style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "3px 0",
+                      }}>
+                        <span style={{ fontSize: 13, width: 18, textAlign: "center" }}>{medals[i]}</span>
+                        <div style={{
+                          width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                          background: avatarSrc
+                            ? `url(${avatarSrc}) center/cover no-repeat`
+                            : "linear-gradient(135deg, #C084FC, #818CF8)",
+                          border: `1.5px solid ${colors[i]}40`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 9, color: "#fff", fontWeight: 700,
+                        }}>
+                          {!avatarSrc && displayName.charAt(0).toUpperCase()}
+                        </div>
+                        <div style={{
+                          flex: 1, fontSize: 11, fontWeight: 600, textAlign: "left",
+                          color: "rgba(255,255,255,0.55)",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {displayName}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: colors[i] }}>
+                          {entry.compositeScore}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -2982,6 +3076,168 @@ export default function CubePatternGame() {
           </div>
         );
       })()}
+
+      {/* ─── Event Modal ─── */}
+      {showEventModal && rankings.length > 0 && getDDayCount() > 0 && (
+        <div
+          onClick={() => setShowEventModal(false)}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(0,0,0,0.85)",
+            backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 1001, animation: "modalBackdropIn 0.25s ease-out",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative", padding: "28px 22px 22px", textAlign: "center",
+              background: "linear-gradient(160deg, rgba(35,20,65,0.98) 0%, rgba(15,10,40,0.98) 100%)",
+              borderRadius: 24,
+              border: "1px solid rgba(255,215,0,0.15)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.7), 0 0 80px rgba(255,215,0,0.06)",
+              maxWidth: 360, width: "100%", maxHeight: "85vh", overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              animation: "modalFadeIn 0.35s cubic-bezier(0.34, 1.3, 0.64, 1)",
+              fontFamily: "'Outfit', sans-serif", color: "#fff",
+            }}
+          >
+            {/* Close */}
+            <button onClick={() => setShowEventModal(false)} style={{
+              position: "absolute", top: 12, right: 14,
+              background: "none", border: "none", color: "rgba(255,255,255,0.3)",
+              fontSize: 22, cursor: "pointer", lineHeight: 1, padding: 4,
+            }}>✕</button>
+
+            {/* Title */}
+            <div style={{ fontSize: 42, marginBottom: 2 }}>☕</div>
+            <div style={{
+              fontSize: 11, letterSpacing: 4, color: "rgba(255,215,0,0.7)", fontWeight: 700, marginBottom: 4,
+            }}>SPECIAL EVENT</div>
+            <div style={{
+              fontSize: 18, fontWeight: 800, marginBottom: 14,
+              background: "linear-gradient(135deg, #FFD93D, #FF8C42)",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}>CUBE PATTERN CHALLENGE</div>
+
+            {/* D-Day */}
+            <div style={{
+              display: "inline-block", padding: "6px 22px", borderRadius: 30,
+              background: "linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,140,66,0.15))",
+              border: "1px solid rgba(255,215,0,0.25)",
+              fontSize: 22, fontWeight: 900, color: "#FFD93D", letterSpacing: 2,
+              animation: "eventPulse 2s ease-in-out infinite",
+              marginBottom: 18,
+            }}>D-{getDDayCount()}</div>
+
+            {/* Event date */}
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 14 }}>
+              📅 2026.03.30 (월) AM 9:00 기준 순위 확정
+            </div>
+
+            {/* Hooking text */}
+            <div style={{
+              padding: "14px 16px", borderRadius: 14,
+              background: "rgba(255,215,0,0.04)", border: "1px solid rgba(255,215,0,0.08)",
+              marginBottom: 16, textAlign: "left",
+              fontSize: 13, lineHeight: 1.7, color: "rgba(255,255,255,0.75)",
+              animation: "eventSlideUp 0.5s ease-out 0.2s both",
+            }}>
+              🔥 <span style={{ color: "#FFD93D", fontWeight: 700 }}>매일 플레이할수록 순위가 올라갑니다!</span><br/>
+              지금 이 순간에도 순위가 바뀌고 있어요.<br/>
+              상위권에 도전해서 <span style={{ color: "#00C9A7", fontWeight: 700 }}>스타벅스 커피 쿠폰</span>을 받아가세요! ☕
+            </div>
+
+            {/* Prizes */}
+            <div style={{
+              display: "flex", flexDirection: "column", gap: 8, marginBottom: 18,
+              animation: "eventSlideUp 0.5s ease-out 0.35s both",
+            }}>
+              {[
+                { medal: "🥇", rank: "1등", cups: 3, color: "#FFD93D" },
+                { medal: "🥈", rank: "2등", cups: 2, color: "#C0C0C0" },
+                { medal: "🥉", rank: "3등", cups: 1, color: "#CD7F32" },
+              ].map((p) => (
+                <div key={p.rank} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 14px", borderRadius: 12,
+                  background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)",
+                }}>
+                  <span style={{ fontSize: 22 }}>{p.medal}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: p.color, minWidth: 28 }}>{p.rank}</span>
+                  <span style={{ flex: 1, fontSize: 13, color: "rgba(255,255,255,0.6)" }}>
+                    스타벅스 커피 쿠폰 <span style={{ color: "#fff", fontWeight: 700 }}>{p.cups}장</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Current Top 3 */}
+            <div style={{
+              marginBottom: 18,
+              animation: "eventSlideUp 0.5s ease-out 0.5s both",
+            }}>
+              <div style={{
+                fontSize: 10, letterSpacing: 3, color: "rgba(255,255,255,0.3)",
+                fontWeight: 600, marginBottom: 10,
+              }}>🏆 CURRENT TOP 3</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {rankings.slice(0, 3).map((entry, i) => {
+                  const uid = entry.userId;
+                  const profile = top3Avatars[uid];
+                  const avatarSrc = profile?.avatar;
+                  const displayName = profile?.name || entry.playerName || "Anonymous";
+                  const medals = ["🥇", "🥈", "🥉"];
+                  const borderColors = ["rgba(255,215,0,0.4)", "rgba(192,192,192,0.4)", "rgba(205,127,50,0.4)"];
+                  const bgColors = ["rgba(255,215,0,0.06)", "rgba(192,192,192,0.04)", "rgba(205,127,50,0.04)"];
+                  return (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      padding: "10px 14px", borderRadius: 14,
+                      background: bgColors[i], border: `1px solid ${borderColors[i]}`,
+                    }}>
+                      <span style={{ fontSize: 20, width: 26 }}>{medals[i]}</span>
+                      <div style={{
+                        width: 36, height: 36, borderRadius: "50%", flexShrink: 0,
+                        background: avatarSrc
+                          ? `url(${avatarSrc}) center/cover no-repeat`
+                          : "linear-gradient(135deg, #C084FC, #818CF8)",
+                        border: `2px solid ${borderColors[i]}`,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 14, color: "#fff", fontWeight: 700,
+                      }}>
+                        {!avatarSrc && displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, textAlign: "left" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{displayName}</div>
+                        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{entry.compositeScore} pts</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* CTA */}
+            <button
+              onClick={() => setShowEventModal(false)}
+              style={{
+                width: "100%", padding: "14px 0", borderRadius: 16,
+                background: "linear-gradient(135deg, #FF3B5C, #FF8C42)",
+                border: "none", color: "#fff", fontSize: 16, fontWeight: 800,
+                cursor: "pointer", letterSpacing: 1,
+                boxShadow: "0 6px 24px rgba(255,59,92,0.3)",
+                animation: "eventSlideUp 0.5s ease-out 0.65s both",
+              }}
+            >
+              🎮 지금 도전하기
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
