@@ -2811,7 +2811,7 @@ export default function CubePatternGame() {
                       {/* Ripple hint — only when collapsed */}
                       {!reportDetailOpen && (
                         <div style={{
-                          position: "absolute", right: 36, top: "50%",
+                          position: "absolute", right: 56, top: "50%",
                           width: 28, height: 28,
                           marginTop: -14,
                           borderRadius: "50%",
