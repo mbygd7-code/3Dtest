@@ -2707,7 +2707,7 @@ export default function CubePatternGame() {
                     {entry.playerName || "익명"}
                   </div>
                   <div style={{ flex: 1, fontWeight: 700, fontSize: 15 }}>
-                    {entry.score}
+                    {entry.compositeScore}
                     <span style={{ fontSize: 10, fontWeight: 400, color: "rgba(255,255,255,0.4)", marginLeft: 3 }}>pts</span>
                   </div>
                   <div style={{ width: 32, textAlign: "center", color: "rgba(255,255,255,0.6)" }}>{entry.level}</div>
