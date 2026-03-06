@@ -2055,9 +2055,9 @@ export default function CubePatternGame() {
             ? "rgba(10,10,26,0.92)"
             : "rgba(10,10,26,0.85)",
           display: "flex", flexDirection: "column", alignItems: "center",
-          justifyContent: "center", zIndex: 100,
-          paddingBottom: "calc(4vh + env(safe-area-inset-bottom))",
-          paddingTop: "calc(12px + env(safe-area-inset-top))",
+          justifyContent: "center", gap: "clamp(4px, 1.2vh, 12px)", zIndex: 100,
+          paddingBottom: "calc(2vh + env(safe-area-inset-bottom))",
+          paddingTop: "calc(8px + env(safe-area-inset-top))",
           overflowY: "auto", WebkitOverflowScrolling: "touch",
           backdropFilter: gameState === "folding" ? "none" : "blur(8px)",
           WebkitBackdropFilter: gameState === "folding" ? "none" : "blur(8px)",
@@ -2097,38 +2097,38 @@ export default function CubePatternGame() {
             </div>
           )}
           {gameState === "idle" && (
-            <div style={{ textAlign: "center", marginBottom: 16 }}>
+            <div style={{ textAlign: "center", marginBottom: "clamp(4px, 1.5vh, 16px)" }}>
               <div style={{
-                fontSize: 44, fontWeight: 800, marginBottom: 8, letterSpacing: 2,
+                fontSize: "clamp(28px, 6vh, 44px)", fontWeight: 800, marginBottom: "clamp(2px, 0.8vh, 8px)", letterSpacing: 2, lineHeight: 1.1,
                 background: "linear-gradient(135deg, #fff 30%, rgba(192,132,252,0.9) 100%)",
                 WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
               }}>
                 CUBE<br/>PATTERN
               </div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", lineHeight: 1.7, maxWidth: 280 }}>
-                3D 큐브를 드래그하여 회전시키고<br/>
-                패턴 순서대로 면을 터치하세요
-              </div>
-              {bestScore > 0 && (
-                <div style={{
-                  marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6,
-                  padding: "5px 14px", background: "rgba(255,215,0,0.06)",
-                  borderRadius: 20, border: "1px solid rgba(255,215,0,0.12)",
-                }}>
-                  <span style={{ fontSize: 10, color: "rgba(255,215,0,0.5)", letterSpacing: 2, fontWeight: 600 }}>BEST</span>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: "#FFD93D" }}>{bestScore}</span>
-                </div>
-              )}
-
               {/* Top 3 Mini Leaderboard */}
               {rankings.length > 0 && (
                 <div style={{
-                  marginTop: 14, display: "inline-flex", flexDirection: "column", gap: 5,
-                  padding: "10px 16px", background: "rgba(255,255,255,0.02)",
+                  marginTop: "clamp(4px, 1vh, 14px)", display: "inline-flex", flexDirection: "column", gap: "clamp(2px, 0.5vh, 5px)",
+                  padding: "clamp(6px, 1vh, 10px) 16px", background: "rgba(255,255,255,0.02)",
                   borderRadius: 14, border: "1px solid rgba(255,255,255,0.06)",
                   minWidth: 220,
                 }}>
+                  {/* D-Day inside ranking card */}
+                  {getDDayCount() > 0 && (
+                    <div
+                      onClick={() => setShowEventModal(true)}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                        padding: "5px 0 6px", marginBottom: 2, cursor: "pointer",
+                        borderBottom: "1px solid rgba(255,215,0,0.1)",
+                      }}
+                    >
+                      <span style={{ fontSize: 12 }}>☕</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: "#FFD93D", letterSpacing: 1 }}>D-{getDDayCount()}</span>
+                      <span style={{ fontSize: 9, color: "rgba(255,215,0,0.5)", fontWeight: 600 }}>EVENT</span>
+                    </div>
+                  )}
                   <div style={{
                     fontSize: 9, letterSpacing: 3, color: "rgba(255,255,255,0.25)",
                     fontWeight: 600, marginBottom: 2, textAlign: "center",
@@ -2307,7 +2307,7 @@ export default function CubePatternGame() {
           })()}
           {/* Mode selector inside overlay */}
           {(gameState === "idle" || gameState === "gameover") && (
-            <div style={{ display: "flex", gap: 10, marginBottom: 32 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: "clamp(12px, 3vh, 32px)" }}>
               {["color", "number"].map((mode) => (
                 <button
                   key={mode}
@@ -2332,7 +2332,7 @@ export default function CubePatternGame() {
             </div>
           )}
           {(gameState === "idle" || gameState === "gameover") && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "clamp(6px, 1.5vh, 14px)" }}>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <button
                   onClick={() => { setShowReport(true); setReportAnimReady(false); setDetailAnimReady(false); setReportDetailOpen(false); setTimeout(() => setReportAnimReady(true), 100); }}
@@ -2459,7 +2459,7 @@ export default function CubePatternGame() {
                 <button
                   onClick={handleLogout}
                   style={{
-                    marginTop: 16, padding: "8px 22px", fontSize: 12, fontWeight: 500,
+                    marginTop: "clamp(4px, 1.2vh, 16px)", padding: "8px 22px", fontSize: 12, fontWeight: 500,
                     fontFamily: "'Outfit', sans-serif", background: "rgba(255,255,255,0.05)",
                     color: "rgba(255,255,255,0.5)", border: "1px solid rgba(255,255,255,0.15)",
                     borderRadius: 20, cursor: "pointer", letterSpacing: 1, transition: "all 0.2s",
@@ -2470,7 +2470,7 @@ export default function CubePatternGame() {
                 </button>
               )}
               <div style={{
-                marginTop: 28, fontSize: 11, color: "rgba(255,255,255,0.3)",
+                marginTop: "clamp(8px, 2vh, 28px)", fontSize: 11, color: "rgba(255,255,255,0.3)",
                 letterSpacing: 1,
               }}>
                 Cube v1.0.0
