@@ -1655,6 +1655,11 @@ export default function CubePatternGame() {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.4; }
         }
+        @keyframes rippleHint {
+          0% { transform: scale(0.8); opacity: 0.6; }
+          50% { transform: scale(1.6); opacity: 0; }
+          100% { transform: scale(0.8); opacity: 0; }
+        }
         @keyframes modalFadeIn {
           0% { opacity: 0; transform: scale(0.92); }
           100% { opacity: 1; transform: scale(1); }
@@ -2794,13 +2799,27 @@ export default function CubePatternGame() {
                     <div
                       onClick={() => setReportDetailOpen(v => !v)}
                       style={{
+                        position: "relative",
                         display: "flex", alignItems: "center", justifyContent: "center",
                         gap: 16, padding: "16px 20px",
                         cursor: "pointer",
                         WebkitTapHighlightColor: "transparent",
                         userSelect: "none",
+                        overflow: "hidden",
                       }}
                     >
+                      {/* Ripple hint — only when collapsed */}
+                      {!reportDetailOpen && (
+                        <div style={{
+                          position: "absolute", right: 36, top: "50%",
+                          width: 28, height: 28,
+                          marginTop: -14,
+                          borderRadius: "50%",
+                          background: "rgba(192,132,252,0.15)",
+                          animation: "rippleHint 2s ease-in-out infinite",
+                          pointerEvents: "none",
+                        }} />
+                      )}
                       <div style={{ position: "relative" }}>
                         <ProgressRing value={overallScore} color="#C084FC" size={68} stroke={5} />
                         <div style={{
