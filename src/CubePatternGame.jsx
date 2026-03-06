@@ -2913,10 +2913,10 @@ export default function CubePatternGame() {
                       display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
                     }}>
                       <span style={{ fontSize: 20 }}>🩺</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>전문가 소견</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>전문가 소견</span>
                     </div>
                     <p style={{
-                      fontSize: 12, lineHeight: 1.7,
+                      fontSize: 14, lineHeight: 1.8,
                       color: "rgba(255,255,255,0.55)",
                       margin: 0,
                       wordBreak: "keep-all",
