@@ -160,10 +160,20 @@ function getDeviceId() {
 const RANKING_STORAGE_KEY = "cubePatternRankings";
 const MAX_RANKINGS = 50;
 
+function filterBestPerUser(rankings) {
+  const best = new Map();
+  for (const r of rankings) {
+    const key = r.userId || r.playerName || "unknown";
+    if (!best.has(key) || (r.compositeScore || 0) > (best.get(key).compositeScore || 0)) {
+      best.set(key, r);
+    }
+  }
+  return [...best.values()].sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0));
+}
 function loadRankingsLocal() {
   try {
     const data = localStorage.getItem(RANKING_STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    return data ? filterBestPerUser(JSON.parse(data)) : [];
   } catch { return []; }
 }
 function persistRankingsLocal(r) {
@@ -177,16 +187,16 @@ async function fetchRankingsFromDB() {
     const { data, error } = await supabase
       .from("rankings")
       .select("*, profiles(nickname)")
-      .order("composite_score", { ascending: false })
-      .limit(MAX_RANKINGS);
+      .order("composite_score", { ascending: false });
     if (error) throw error;
-    return (data || []).map((r) => ({
+    const all = (data || []).map((r) => ({
       score: r.score, level: r.level, time: r.time,
       accuracy: r.accuracy, compositeScore: r.composite_score,
       gameMode: r.game_mode, date: r.created_at,
       playerName: r.profiles?.nickname || r.player_name || "익명",
       userId: r.user_id,
     }));
+    return filterBestPerUser(all).slice(0, MAX_RANKINGS);
   } catch {
     return loadRankingsLocal();
   }
