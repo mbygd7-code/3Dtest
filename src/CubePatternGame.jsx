@@ -158,7 +158,7 @@ function getDeviceId() {
 
 // ─── Ranking: local cache keys ───
 const RANKING_STORAGE_KEY = "cubePatternRankings";
-const MAX_RANKINGS = 10;
+const MAX_RANKINGS = 50;
 
 function loadRankingsLocal() {
   try {
@@ -1061,18 +1061,19 @@ export default function CubePatternGame() {
           const finalAcc = totalAttempts + 1 > 0 ? Math.round((correctAttempts / (totalAttempts + 1)) * 100) : 0;
           const composite = calculateCompositeScore(score, elapsedTime, finalAcc);
           const entry = { score, level, time: elapsedTime, accuracy: finalAcc, compositeScore: composite, gameMode, playerName: nickname || "익명", date: new Date().toISOString() };
-          // Local cache update
-          const updated = [...loadRankingsLocal(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
-          persistRankingsLocal(updated);
-          setRankings(updated);
           setBestScore(Math.max(score, bestScore));
-          // Supabase insert (async, non-blocking)
+          // Supabase insert → then fetch all players' rankings
           const uid = user?.id;
           insertRankingToDB(entry, uid).then(() => {
             fetchRankingsFromDB().then((dbRankings) => {
               if (dbRankings.length > 0) {
                 setRankings(dbRankings);
                 persistRankingsLocal(dbRankings);
+              } else {
+                // DB 실패 시 로컬 폴백
+                const updated = [...loadRankingsLocal(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
+                persistRankingsLocal(updated);
+                setRankings(updated);
               }
             });
           });
@@ -1149,13 +1150,12 @@ export default function CubePatternGame() {
               gameMode, date: new Date().toISOString(),
               playerName: nickname || "익명",
             };
-            fetchRankingsFromDB().then((r) => {
-              const updated = [...r, entry].sort((a, b) => (b.compositeScore || 0) - (a.compositeScore || 0)).slice(0, MAX_RANKINGS);
-              persistRankingsLocal(updated);
-              setRankings(updated);
-            });
             if (user) {
-              insertRankingToDB(entry, user.id);
+              insertRankingToDB(entry, user.id).then(() => {
+                fetchRankingsFromDB().then((dbR) => {
+                  if (dbR.length > 0) { setRankings(dbR); persistRankingsLocal(dbR); }
+                });
+              });
               saveCognitiveSession({ score: finalScore, level: MAX_LEVEL, time: elapsedTime, accuracy: entry.accuracy, maxCombo: maxComboRef.current, gameMode }, user.id)
                 .then((hist) => { if (hist) setCognitiveHistory(hist); });
             }
@@ -1186,14 +1186,17 @@ export default function CubePatternGame() {
       const finalAcc = totalAttempts + 1 > 0 ? Math.round((correctAttempts / (totalAttempts + 1)) * 100) : 0;
       const composite = calculateCompositeScore(score, elapsedTime, finalAcc);
       const entry = { score, level, time: elapsedTime, accuracy: finalAcc, compositeScore: composite, gameMode, playerName: nickname || "익명", date: new Date().toISOString() };
-      // Local cache update
-      const updated = [...loadRankingsLocal(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
-      persistRankingsLocal(updated);
-      setRankings(updated);
       setBestScore(Math.max(score, bestScore));
       const uid2 = user?.id;
       insertRankingToDB(entry, uid2).then(() => {
-        fetchRankingsFromDB().then((dbR) => { if (dbR.length > 0) { setRankings(dbR); persistRankingsLocal(dbR); } });
+        fetchRankingsFromDB().then((dbR) => {
+          if (dbR.length > 0) { setRankings(dbR); persistRankingsLocal(dbR); }
+          else {
+            const updated = [...loadRankingsLocal(), entry].sort((a, b) => b.compositeScore - a.compositeScore).slice(0, MAX_RANKINGS);
+            persistRankingsLocal(updated);
+            setRankings(updated);
+          }
+        });
       });
       const cogSession = { score, level, time: elapsedTime, accuracy: finalAcc, maxCombo: maxComboRef.current, gameMode, date: new Date().toISOString() };
       const localH = loadCognitiveLocal();
