@@ -2658,31 +2658,36 @@ export default function CubePatternGame() {
           );
         };
         const overallScore = Math.round((metrics.memory + metrics.reaction + metrics.pattern + metrics.focus + metrics.creativity) / 5);
+        const ScoreText = ({ value, color }) => (
+          <span style={{ fontSize: 22, fontWeight: 800, color }}>{value}</span>
+        );
         const getDoctorComment = () => {
           const s = metrics.totalSessions;
           const p = metrics.preventionScore;
-          let analysis = "";
+          let analysisParts = [];
           if (s <= 2) {
-            analysis = `아직 ${s}회의 게임 기록이 있어 정밀한 분석이 어렵지만, 초기 측정 결과 인지 능력의 기초 지표가 확인되었습니다. 꾸준한 훈련을 통해 더 정확한 분석이 가능해집니다.`;
+            analysisParts = ["아직 ", <ScoreText key="s" value={`${s}회`} color="#C084FC" />, "의 게임 기록이 있어 정밀한 분석이 어렵지만, 초기 측정 결과 인지 능력의 기초 지표가 확인되었습니다. 꾸준한 훈련을 통해 더 정확한 분석이 가능해집니다."];
           } else if (overallScore < 40) {
-            analysis = `현재 인지 기능 종합 점수는 ${overallScore}점으로, 아직 훈련 초기 단계입니다. 특히 ${categories.find(c => metrics[c.key] === Math.min(...categories.map(c2 => metrics[c2.key]))).label} 영역의 집중적인 훈련이 권장됩니다. 매일 2~3회의 꾸준한 반복 훈련이 인지 능력 향상에 큰 도움이 됩니다.`;
+            const weakest = categories.find(c => metrics[c.key] === Math.min(...categories.map(c2 => metrics[c2.key]))).label;
+            analysisParts = ["현재 인지 기능 종합 점수는 ", <ScoreText key="os" value={`${overallScore}점`} color="#C084FC" />, "으로, 아직 훈련 초기 단계입니다. 특히 ", weakest, " 영역의 집중적인 훈련이 권장됩니다. 매일 2~3회의 꾸준한 반복 훈련이 인지 능력 향상에 큰 도움이 됩니다."];
           } else if (overallScore < 65) {
-            analysis = `인지 기능 종합 점수 ${overallScore}점으로 양호한 수준을 보이고 있습니다. ${categories.find(c => metrics[c.key] === Math.max(...categories.map(c2 => metrics[c2.key]))).label} 분야에서 특히 좋은 성과를 보이며, 지속적인 훈련으로 전반적 인지 기능이 고르게 발달하고 있습니다.`;
+            const strongest = categories.find(c => metrics[c.key] === Math.max(...categories.map(c2 => metrics[c2.key]))).label;
+            analysisParts = ["인지 기능 종합 점수 ", <ScoreText key="os" value={`${overallScore}점`} color="#C084FC" />, "으로 양호한 수준을 보이고 있습니다. ", strongest, " 분야에서 특히 좋은 성과를 보이며, 지속적인 훈련으로 전반적 인지 기능이 고르게 발달하고 있습니다."];
           } else {
-            analysis = `인지 기능 종합 점수 ${overallScore}점으로 매우 우수한 수준입니다. 기억력, 반응속도, 패턴인지 능력이 고르게 발달되어 있으며, 꾸준한 훈련의 효과가 뚜렷하게 나타나고 있습니다.`;
+            analysisParts = ["인지 기능 종합 점수 ", <ScoreText key="os" value={`${overallScore}점`} color="#C084FC" />, "으로 매우 우수한 수준입니다. 기억력, 반응속도, 패턴인지 능력이 고르게 발달되어 있으며, 꾸준한 훈련의 효과가 뚜렷하게 나타나고 있습니다."];
           }
-          let prevention = "";
+          let preventionParts = [];
           if (p > 0) {
-            prevention = ` 현재까지의 훈련 데이터를 기반으로, 인지 자극 활동을 통한 인지장애 및 치매 예방 기여도는 약 ${p}%로 추정됩니다.`;
+            preventionParts = [" 현재까지의 훈련 데이터를 기반으로, 인지 자극 활동을 통한 인지장애 및 치매 예방 기여도는 약 ", <ScoreText key="pv" value={`${p}%`} color="#00C9A7" />, "로 추정됩니다."];
             if (p >= 50) {
-              prevention += " 이는 정기적인 두뇌 활동이 신경가소성을 촉진하고, 인지 예비력(cognitive reserve)을 강화하는 데 효과적으로 작용하고 있음을 시사합니다.";
+              preventionParts.push(" 이는 정기적인 두뇌 활동이 신경가소성을 촉진하고, 인지 예비력(cognitive reserve)을 강화하는 데 효과적으로 작용하고 있음을 시사합니다.");
             } else if (p >= 25) {
-              prevention += " 꾸준한 훈련을 지속하면 인지 예비력이 더욱 강화되어 예방 수치가 향상될 것으로 기대됩니다.";
+              preventionParts.push(" 꾸준한 훈련을 지속하면 인지 예비력이 더욱 강화되어 예방 수치가 향상될 것으로 기대됩니다.");
             } else {
-              prevention += " 아직 초기 단계이지만, 매일 꾸준히 훈련하시면 인지 건강 유지에 유의미한 효과가 나타날 것입니다.";
+              preventionParts.push(" 아직 초기 단계이지만, 매일 꾸준히 훈련하시면 인지 건강 유지에 유의미한 효과가 나타날 것입니다.");
             }
           }
-          return analysis + prevention;
+          return <>{analysisParts}{preventionParts}</>;
         };
         return (
           <div
