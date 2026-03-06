@@ -650,6 +650,39 @@ function ColorDot({ faceKey, size = 36, showLabel = false, dim = false, pulse = 
     </div>
   );
 }
+const ProgressRing = ({ value, color, size = 52, stroke = 4 }) => {
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (Math.min(value, 100) / 100) * circ;
+  return (
+    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={circ} strokeDashoffset={offset}
+        strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease-out" }} />
+    </svg>
+  );
+};
+
+function AnimatedNumber({ value, color, fontSize, fontWeight = 700, suffix = "", duration = 1000 }) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    if (value === 0) { setDisplay(0); return; }
+    const start = performance.now();
+    let raf;
+    const animate = (now) => {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setDisplay(Math.round(eased * value));
+      if (progress < 1) raf = requestAnimationFrame(animate);
+    };
+    raf = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(raf);
+  }, [value, duration]);
+  return <span style={{ fontSize, fontWeight, color }}>{display}{suffix}</span>;
+}
+
 export default function CubePatternGame() {
   // ─── Auth state ───
   const [user, setUser] = useState(null); // Supabase user object
@@ -2646,19 +2679,6 @@ export default function CubePatternGame() {
             </svg>
           );
         };
-        const ProgressRing = ({ value, color, size = 52, stroke = 4 }) => {
-          const r = (size - stroke) / 2;
-          const circ = 2 * Math.PI * r;
-          const offset = circ - (Math.min(value, 100) / 100) * circ;
-          return (
-            <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-              <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={stroke} />
-              <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-                strokeDasharray={circ} strokeDashoffset={offset}
-                strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s ease-out" }} />
-            </svg>
-          );
-        };
         const overallScore = Math.round((metrics.memory + metrics.reaction + metrics.pattern + metrics.focus + metrics.creativity) / 5);
         const ScoreText = ({ value, color }) => (
           <span style={{ fontSize: 22, fontWeight: 800, color }}>{value}</span>
@@ -2832,9 +2852,8 @@ export default function CubePatternGame() {
                         <div style={{
                           position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                           display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 26, fontWeight: 800, color: "#C084FC",
                         }}>
-                          {reportAnimReady ? overallScore : 0}
+                          <AnimatedNumber value={reportAnimReady ? overallScore : 0} color="#C084FC" fontSize={26} fontWeight={800} />
                         </div>
                       </div>
                       <div style={{ flex: 1 }}>
@@ -2880,11 +2899,8 @@ export default function CubePatternGame() {
                                 <div style={{
                                   position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
                                   display: "flex", alignItems: "center", justifyContent: "center",
-                                  fontSize: 14, fontWeight: 700, color: cat.color,
-                                  transition: "opacity 0.5s ease",
-                                  opacity: detailAnimReady ? 1 : 0,
                                 }}>
-                                  {detailAnimReady ? val : 0}
+                                  <AnimatedNumber value={detailAnimReady ? val : 0} color={cat.color} fontSize={14} />
                                 </div>
                               </div>
                               <div style={{ minWidth: 62 }}>
@@ -2920,7 +2936,7 @@ export default function CubePatternGame() {
                       display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8,
                     }}>
                       <span style={{ fontSize: 16, fontWeight: 600 }}>🛡️ 인지장애 예방 기여도</span>
-                      <span style={{ fontSize: 21, fontWeight: 800, color: "#00C9A7" }}>{reportAnimReady ? metrics.preventionScore : 0}%</span>
+                      <AnimatedNumber value={reportAnimReady ? metrics.preventionScore : 0} color="#00C9A7" fontSize={21} fontWeight={800} suffix="%" />
                     </div>
                     <div style={{
                       height: 6, borderRadius: 3,
