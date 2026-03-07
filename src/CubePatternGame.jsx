@@ -1029,8 +1029,8 @@ export default function CubePatternGame() {
     setTimeout(() => setGlowEdges(true), 600);
     // Phase 3 (2800ms): burst done, switch to breathing
     setTimeout(() => { setGlowEdges(false); setEdgeBreathing(true); }, 2800);
-    // Phase 4 (3200ms): game starts + timer starts
-    setTimeout(() => { startTimer(); startRound(1, 1); }, 3200);
+    // Phase 4 (3200ms): game starts (timer starts after pattern shown)
+    setTimeout(() => { startRound(1, 1); }, 3200);
   };
   const handleModeSelect = (mode) => {
     if (mode === gameMode) return;
@@ -1090,6 +1090,7 @@ export default function CubePatternGame() {
   const showPattern = (p) => {
     let i = 0;
     setShowIndex(-1);
+    stopTimer();
     const interval = setInterval(() => {
       if (i < p.length) {
         setShowIndex(i);
@@ -1097,15 +1098,16 @@ export default function CubePatternGame() {
         playFaceSound(p[i]);
         setTimeout(() => {
           setHighlightFace(null);
-        }, 500);
+        }, 300);
         i++;
       } else {
         clearInterval(interval);
         setShowIndex(-1);
         setGameState("input");
         setMessage("큐브를 돌려서 면을 터치하세요!");
+        startTimer();
       }
-    }, 800);
+    }, 500);
   };
   const handleFaceClick = useCallback(
     (faceKey) => {
