@@ -2703,6 +2703,7 @@ export default function CubePatternGame() {
       {showRanking && (
         <div
           onClick={() => setShowRanking(false)}
+          onTouchMove={(e) => e.preventDefault()}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
             background: "rgba(0,0,0,0.7)",
@@ -2711,10 +2712,13 @@ export default function CubePatternGame() {
             zIndex: 999,
             animation: "modalBackdropIn 0.25s ease-out",
             padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)",
+            touchAction: "none",
+            overscrollBehavior: "none",
           }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
             style={{
               position: "relative",
               padding: "28px 24px 24px",
@@ -2808,6 +2812,8 @@ export default function CubePatternGame() {
               display: "flex", flexDirection: "column", gap: 5,
               overflowY: "auto", flex: 1,
               paddingRight: 4,
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
             }}>
               {rankings.map((entry, i) => {
                 const isMe = entry.userId === user?.id || entry.playerName === nickname;
