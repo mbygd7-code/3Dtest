@@ -1904,7 +1904,7 @@ export default function CubePatternGame() {
       {/* 3D Cube area — always vertically centered */}
       {/* Outer wrapper handles centering (never animated) */}
       <div style={{
-        position: "absolute", top: "50%", left: "50%",
+        position: "absolute", top: "calc(50% + 80px)", left: "50%",
         transform: "translate(-50%, -50%)",
         width: "100%", maxWidth: 500, height: 320,
         display: "flex", alignItems: "center", justifyContent: "center",
