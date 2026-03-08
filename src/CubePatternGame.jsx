@@ -1441,7 +1441,7 @@ export default function CubePatternGame() {
     const dt = Math.max(1, now - lastMoveTime.current);
     const dx = e.clientX - lastPos.current.x;
     const dy = e.clientY - lastPos.current.y;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
       isDragMove.current = true;
     }
     // Track horizontal velocity (smoothed)
@@ -1457,7 +1457,7 @@ export default function CubePatternGame() {
     dragging.current = false;
     activeInput.current = null;
     startInertia();
-    setTimeout(() => { isDragMove.current = false; }, 50);
+    setTimeout(() => { isDragMove.current = false; }, 0);
   };
   const handleTouchStart = (e) => {
     // If pointer events already claimed this gesture, skip
@@ -1479,7 +1479,7 @@ export default function CubePatternGame() {
     const t = e.touches[0];
     const dx = t.clientX - lastPos.current.x;
     const dy = t.clientY - lastPos.current.y;
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
       isDragMove.current = true;
     }
     // Track horizontal velocity (smoothed)
@@ -1495,7 +1495,7 @@ export default function CubePatternGame() {
     dragging.current = false;
     activeInput.current = null;
     startInertia();
-    setTimeout(() => { isDragMove.current = false; }, 50);
+    setTimeout(() => { isDragMove.current = false; }, 0);
   }, [startInertia]);
 
   useEffect(() => {
@@ -2951,9 +2951,11 @@ export default function CubePatternGame() {
               <div style={{
                 display: "flex", justifyContent: "center",
                 padding: "40px 0",
+                paddingBottom: "calc(40px + env(safe-area-inset-bottom))",
+                minHeight: "min-content",
               }}>
             <div
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); if (reportDetailOpen) setReportDetailOpen(false); }}
               style={{
                 position: "relative",
                 padding: "28px 20px 24px",
@@ -3042,7 +3044,7 @@ export default function CubePatternGame() {
                   }}>
                     {/* Score header — clickable */}
                     <div
-                      onClick={() => { setReportDetailOpen(v => { if (!v) { setDetailAnimReady(false); setTimeout(() => setDetailAnimReady(true), 100); } return !v; }); }}
+                      onClick={(e) => { e.stopPropagation(); setReportDetailOpen(v => { if (!v) { setDetailAnimReady(false); setTimeout(() => setDetailAnimReady(true), 100); } return !v; }); }}
                       style={{
                         position: "relative",
                         display: "flex", alignItems: "center", justifyContent: "center",
