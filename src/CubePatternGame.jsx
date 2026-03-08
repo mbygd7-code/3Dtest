@@ -165,6 +165,38 @@ function getDeviceId() {
   return id;
 }
 
+// ─── Number-mode guide popup (max 2 views per user) ───
+const NUMBER_GUIDE_KEY = "cubeNumberGuideCount";
+function getNumberGuideCount(userId) {
+  try {
+    const data = JSON.parse(localStorage.getItem(NUMBER_GUIDE_KEY) || "{}");
+    return data[userId] || 0;
+  } catch { return 0; }
+}
+function incrementNumberGuideCount(userId) {
+  try {
+    const data = JSON.parse(localStorage.getItem(NUMBER_GUIDE_KEY) || "{}");
+    data[userId] = (data[userId] || 0) + 1;
+    localStorage.setItem(NUMBER_GUIDE_KEY, JSON.stringify(data));
+  } catch {}
+}
+
+// ─── Number-mode arrow hint (max 2 views per user) ───
+const NUMBER_ARROW_KEY = "cubeNumberArrowCount";
+function getNumberArrowCount(userId) {
+  try {
+    const data = JSON.parse(localStorage.getItem(NUMBER_ARROW_KEY) || "{}");
+    return data[userId] || 0;
+  } catch { return 0; }
+}
+function incrementNumberArrowCount(userId) {
+  try {
+    const data = JSON.parse(localStorage.getItem(NUMBER_ARROW_KEY) || "{}");
+    data[userId] = (data[userId] || 0) + 1;
+    localStorage.setItem(NUMBER_ARROW_KEY, JSON.stringify(data));
+  } catch {}
+}
+
 // ─── Ranking: local cache keys ───
 const RANKING_STORAGE_KEY = "cubePatternRankings";
 const MAX_RANKINGS = 50;
@@ -767,6 +799,9 @@ export default function CubePatternGame() {
   const [cognitiveHistory, setCognitiveHistory] = useState([]);
   // Event modal
   const [showEventModal, setShowEventModal] = useState(true);
+  const [showNumberGuide, setShowNumberGuide] = useState(false);
+  const [showNumberArrow, setShowNumberArrow] = useState(false);
+  const numberArrowTimerRef = useRef(null);
   const [top3Avatars, setTop3Avatars] = useState({});
   // Round countdown (dynamic per level)
   const levelConfig = getLevelConfig(level);
@@ -776,6 +811,18 @@ export default function CubePatternGame() {
   const roundTimeoutRef = useRef(null);
   const patternLength = levelConfig.patternLength;
   const accuracy = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 100;
+
+  // ─── Close number guide & show arrow hint ───
+  const closeNumberGuide = useCallback(() => {
+    setShowNumberGuide(false);
+    const uid = user?.id || getDeviceId();
+    if (getNumberArrowCount(uid) < 2) {
+      incrementNumberArrowCount(uid);
+      setShowNumberArrow(true);
+      if (numberArrowTimerRef.current) clearTimeout(numberArrowTimerRef.current);
+      numberArrowTimerRef.current = setTimeout(() => setShowNumberArrow(false), 5000);
+    }
+  }, [user]);
 
   // ─── Timer controls ───
   const startTimer = useCallback(() => {
@@ -1728,6 +1775,14 @@ export default function CubePatternGame() {
           50% { transform: scale(1.6); opacity: 0; }
           100% { transform: scale(0.8); opacity: 0; }
         }
+        @keyframes arrowBounce {
+          0%, 100% { transform: translate(0, 0) scale(1); opacity: 1; }
+          50% { transform: translate(-6px, 6px) scale(0.92); opacity: 0.7; }
+        }
+        @keyframes guideCubeSpin {
+          0%   { transform: rotateX(-20deg) rotateY(0deg); }
+          100% { transform: rotateX(-20deg) rotateY(360deg); }
+        }
         @keyframes modalFadeIn {
           0% { opacity: 0; transform: scale(0.92); }
           100% { opacity: 1; transform: scale(1); }
@@ -1886,9 +1941,59 @@ export default function CubePatternGame() {
       {/* ═══ Game HUD — always visible during active gameplay (no fade transitions) ═══ */}
       {gameState !== "idle" && gameState !== "gameover" && gameState !== "folding" && gameState !== "lidAnim" && gameState !== "modeReady" && (
         <>
-          {/* TOP: Pattern display — below top bar */}
+          {/* TOP: Stats bar — above pattern */}
           <div style={{
-            position: "absolute", top: "calc(60px + env(safe-area-inset-top))", left: 0, right: 0,
+            position: "absolute", top: "calc(56px + env(safe-area-inset-top))", left: 0, right: 0,
+            display: "flex", justifyContent: "center", alignItems: "center",
+            zIndex: 30, pointerEvents: "none",
+          }}>
+            <div style={{
+              display: "flex", gap: 16, padding: "10px 24px",
+              background: "rgba(10,10,26,0.8)",
+              backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
+              borderRadius: 20, border: "1px solid rgba(255,255,255,0.06)",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)",
+              alignItems: "center",
+            }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>LEVEL</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "#C084FC" }}>{level}</div>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>ROUND</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{currentRound}/{getLevelConfig(level).rounds}</div>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>SCORE</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>{score}</div>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>
+                  {"❤️".repeat(lives)}{"🖤".repeat(Math.max(0, 3 - lives))}
+                </div>
+              </div>
+              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>TIME</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatTime(elapsedTime)}</div>
+              </div>
+              {combo >= 2 && (
+                <>
+                  <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
+                  <div style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 9, color: "#FFD93D", letterSpacing: 2, marginBottom: 2 }}>COMBO</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: "#FFD93D" }}>×{combo}</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          {/* Pattern display — below stats bar */}
+          <div style={{
+            position: "absolute", top: "calc(116px + env(safe-area-inset-top))", left: 0, right: 0,
             display: "flex", flexDirection: "column", alignItems: "center",
             zIndex: 30, pointerEvents: "none",
           }}>
@@ -1961,51 +2066,6 @@ export default function CubePatternGame() {
                 </div>
               </div>
             )}
-          </div>
-          {/* BOTTOM: Stats bar — fixed at bottom, always visible */}
-          <div style={{
-            position: "absolute", bottom: "calc(24px + env(safe-area-inset-bottom))", left: 0, right: 0,
-            display: "flex", justifyContent: "center", alignItems: "center",
-            zIndex: 30, pointerEvents: "none",
-          }}>
-            <div style={{
-              display: "flex", gap: 16, padding: "12px 24px",
-              background: "rgba(10,10,26,0.8)",
-              backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)",
-              borderRadius: 20, border: "1px solid rgba(255,255,255,0.06)",
-              boxShadow: "0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)",
-              alignItems: "center",
-            }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>LV {level}</div>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>{currentRound}/{getLevelConfig(level).rounds}</div>
-              </div>
-              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>SCORE</div>
-                <div style={{ fontSize: 18, fontWeight: 700 }}>{score}</div>
-              </div>
-              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>
-                  {"❤️".repeat(lives)}{"🖤".repeat(Math.max(0, 3 - lives))}
-                </div>
-              </div>
-              <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", letterSpacing: 2, marginBottom: 2 }}>TIME</div>
-                <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatTime(elapsedTime)}</div>
-              </div>
-              {combo >= 2 && (
-                <>
-                  <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.1)" }} />
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 9, color: "#FFD93D", letterSpacing: 2, marginBottom: 2 }}>COMBO</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: "#FFD93D" }}>×{combo}</div>
-                  </div>
-                </>
-              )}
-            </div>
           </div>
         </>
       )}
@@ -2311,25 +2371,40 @@ export default function CubePatternGame() {
           {(gameState === "idle" || gameState === "gameover") && (
             <div style={{ display: "flex", gap: 10, marginBottom: "clamp(12px, 3vh, 32px)" }}>
               {["color", "number"].map((mode) => (
-                <button
-                  key={mode}
-                  onClick={(e) => { e.stopPropagation(); handleModeSelect(mode); }}
-                  style={{
-                    width: 48, height: 48, borderRadius: 16,
-                    border: gameMode === mode ? "2px solid rgba(255,255,255,0.5)" : "2px solid rgba(255,255,255,0.1)",
-                    background: gameMode === mode ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.03)",
-                    backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
-                    color: "#fff", fontSize: mode === "number" ? 20 : 18,
-                    fontWeight: mode === "number" ? 800 : 400,
-                    fontFamily: "'Outfit', sans-serif",
-                    cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                    transition: "all 0.3s",
-                    boxShadow: gameMode === mode ? "0 0 14px rgba(255,255,255,0.2)" : "none",
-                    WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
-                  }}
-                >
-                  {MODE_ICONS[mode]}
-                </button>
+                <div key={mode} style={{ position: "relative" }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleModeSelect(mode); if (mode === "number") setShowNumberArrow(false); }}
+                    style={{
+                      width: 48, height: 48, borderRadius: 16,
+                      border: gameMode === mode ? "2px solid rgba(255,255,255,0.5)" : "2px solid rgba(255,255,255,0.1)",
+                      background: gameMode === mode ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.03)",
+                      backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)",
+                      color: "#fff", fontSize: mode === "number" ? 20 : 18,
+                      fontWeight: mode === "number" ? 800 : 400,
+                      fontFamily: "'Outfit', sans-serif",
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                      transition: "all 0.3s",
+                      boxShadow: gameMode === mode ? "0 0 14px rgba(255,255,255,0.2)" : "none",
+                      WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                    }}
+                  >
+                    {MODE_ICONS[mode]}
+                  </button>
+                  {/* Arrow hint pointing to number mode button */}
+                  {mode === "number" && showNumberArrow && (
+                    <div style={{
+                      position: "absolute", top: -44, right: -44,
+                      animation: "arrowBounce 0.8s ease-in-out infinite",
+                      pointerEvents: "none",
+                      filter: "drop-shadow(0 0 6px rgba(255,217,61,0.6))",
+                    }}>
+                      <svg width="42" height="42" viewBox="0 0 42 42" style={{ transform: "rotate(-45deg)" }}>
+                        <path d="M7 21 L21 7 L21 14 L35 14 L35 28 L21 28 L21 35 Z"
+                          fill="#FFD93D" stroke="rgba(0,0,0,0.25)" strokeWidth="1.5" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
           )}
@@ -3079,6 +3154,112 @@ export default function CubePatternGame() {
         );
       })()}
 
+      {/* ─── Number Mode Guide Popup ─── */}
+      {showNumberGuide && (
+        <div
+          onClick={() => closeNumberGuide()}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(4px)", WebkitBackdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 1002, animation: "modalBackdropIn 0.25s ease-out",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative", padding: "28px 22px 22px", textAlign: "center",
+              background: "linear-gradient(160deg, rgba(20,30,60,0.95) 0%, rgba(10,15,35,0.95) 100%)",
+              borderRadius: 24,
+              border: "1px solid rgba(100,180,255,0.2)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 0 40px rgba(100,180,255,0.08)",
+              maxWidth: 340, width: "100%",
+              animation: "modalFadeIn 0.35s cubic-bezier(0.34, 1.3, 0.64, 1)",
+              fontFamily: "'Outfit', sans-serif", color: "#fff",
+            }}
+          >
+            <button onClick={() => closeNumberGuide()} style={{
+              position: "absolute", top: 12, right: 14,
+              background: "none", border: "none", color: "rgba(255,255,255,0.3)",
+              fontSize: 22, cursor: "pointer", lineHeight: 1, padding: 4,
+            }}>✕</button>
+
+            {/* Rotating 3D Number Cube */}
+            <div style={{
+              width: 64, height: 64, margin: "0 auto 22px",
+              perspective: 250,
+            }}>
+              <div style={{
+                width: 64, height: 64, position: "relative",
+                transformStyle: "preserve-3d",
+                animation: "guideCubeSpin 6s linear infinite",
+              }}>
+                {[
+                  { face: "front",  num: "1", bg: "#FF3B5C", transform: "translateZ(32px)" },
+                  { face: "back",   num: "2", bg: "#00C9A7", transform: "rotateY(180deg) translateZ(32px)" },
+                  { face: "top",    num: "3", bg: "#FFD93D", transform: "rotateX(90deg) translateZ(32px)" },
+                  { face: "bottom", num: "4", bg: "#6C5CE7", transform: "rotateX(-90deg) translateZ(32px)" },
+                  { face: "left",   num: "5", bg: "#FF8A5C", transform: "rotateY(-90deg) translateZ(32px)" },
+                  { face: "right",  num: "6", bg: "#4DA8FF", transform: "rotateY(90deg) translateZ(32px)" },
+                ].map((f) => (
+                  <div key={f.face} style={{
+                    position: "absolute", width: 64, height: 64,
+                    background: f.bg, transform: f.transform,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 28, fontWeight: 900, color: "rgba(0,0,0,0.5)",
+                    borderRadius: 5, border: "2px solid rgba(255,255,255,0.2)",
+                    backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+                    fontFamily: "'Outfit', sans-serif",
+                  }}>{f.num}</div>
+                ))}
+              </div>
+            </div>
+            <div style={{
+              fontSize: 16, fontWeight: 800, marginBottom: 16,
+              background: "linear-gradient(135deg, #64B5F6, #42A5F5)",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}>TIP: 숫자 큐브 모드</div>
+
+            <div style={{
+              padding: "16px", borderRadius: 16,
+              background: "rgba(100,180,255,0.06)", border: "1px solid rgba(100,180,255,0.12)",
+              marginBottom: 18, textAlign: "left",
+              fontSize: 13, lineHeight: 1.8, color: "rgba(255,255,255,0.8)",
+            }}>
+              모드 선택에서{" "}
+              <span style={{
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 28, height: 28, borderRadius: 8,
+                background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.25)",
+                fontSize: 15, fontWeight: 800, verticalAlign: "middle",
+                margin: "0 2px",
+              }}>3</span>
+              {" "}버튼을 눌러 <span style={{ color: "#64B5F6", fontWeight: 700 }}>숫자 큐브 모드</span>로
+              전환하면 각 면이 숫자로 표시되어{" "}
+              <span style={{ color: "#FFD93D", fontWeight: 700 }}>더 빠르고 정확하게</span>{" "}
+              패턴을 기억할 수 있습니다!<br/><br/>
+              🏆 숫자 모드를 활용하면 <span style={{ color: "#00C9A7", fontWeight: 700 }}>랭킹을 더 쉽게</span> 올릴 수 있어요.
+            </div>
+
+            <button
+              onClick={() => closeNumberGuide()}
+              style={{
+                width: "100%", padding: "13px 0", borderRadius: 16,
+                background: "linear-gradient(135deg, #42A5F5, #1E88E5)",
+                border: "none", color: "#fff", fontSize: 15, fontWeight: 700,
+                cursor: "pointer", letterSpacing: 0.5,
+                boxShadow: "0 6px 20px rgba(66,165,245,0.3)",
+              }}
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ─── Event Modal ─── */}
       {showEventModal && rankings.length > 0 && getDDayCount() > 0 && (
         <div
@@ -3179,7 +3360,14 @@ export default function CubePatternGame() {
 
             {/* CTA */}
             <button
-              onClick={() => setShowEventModal(false)}
+              onClick={() => {
+                setShowEventModal(false);
+                const uid = user?.id || getDeviceId();
+                if (getNumberGuideCount(uid) < 2) {
+                  incrementNumberGuideCount(uid);
+                  setShowNumberGuide(true);
+                }
+              }}
               style={{
                 width: "100%", padding: "14px 0", borderRadius: 16,
                 background: "linear-gradient(135deg, #FF3B5C, #FF8C42)",
