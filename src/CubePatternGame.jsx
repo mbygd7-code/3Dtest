@@ -809,6 +809,10 @@ export default function CubePatternGame() {
   const [roundTimeLeft, setRoundTimeLeft] = useState(ROUND_TIME_LIMIT);
   const roundTimerRef = useRef(null);
   const roundTimeoutRef = useRef(null);
+  // Game session: increments on each startGame to invalidate stale timeouts
+  const gameSessionRef = useRef(0);
+  const showPatternIntervalRef = useRef(null);
+  const gameTimeoutsRef = useRef([]);
   const patternLength = levelConfig.patternLength;
   const accuracy = totalAttempts > 0 ? Math.round((correctAttempts / totalAttempts) * 100) : 100;
 
@@ -843,6 +847,13 @@ export default function CubePatternGame() {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     setElapsedTime(0);
     timerStartRef.current = 0;
+  }, []);
+
+  // ─── Clear all pending game timeouts ───
+  const clearGameTimeouts = useCallback(() => {
+    gameTimeoutsRef.current.forEach(id => clearTimeout(id));
+    gameTimeoutsRef.current = [];
+    if (showPatternIntervalRef.current) { clearInterval(showPatternIntervalRef.current); showPatternIntervalRef.current = null; }
   }, []);
 
   // ─── Round countdown helpers ───
@@ -1022,6 +1033,10 @@ export default function CubePatternGame() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
       clearRoundTimer();
+      // Also clear any pending game timeouts/intervals
+      gameTimeoutsRef.current.forEach(id => clearTimeout(id));
+      gameTimeoutsRef.current = [];
+      if (showPatternIntervalRef.current) { clearInterval(showPatternIntervalRef.current); showPatternIntervalRef.current = null; }
     };
   }, [clearRoundTimer]);
 
@@ -1052,6 +1067,10 @@ export default function CubePatternGame() {
   }, [gameState, clearRoundTimer]);
 
   const startGame = () => {
+    // Cancel all stale timeouts/intervals from previous game
+    clearGameTimeouts();
+    clearRoundTimer();
+    const session = ++gameSessionRef.current;
     playStartSound();
     setScore(0);
     setLevel(1);
@@ -1073,11 +1092,20 @@ export default function CubePatternGame() {
     setEdgeBreathing(false);
     // Phase 1 (0-600ms): overlay fades out
     // Phase 2 (600ms): edge burst fires from seams
-    setTimeout(() => setGlowEdges(true), 600);
+    gameTimeoutsRef.current.push(setTimeout(() => {
+      if (gameSessionRef.current !== session) return;
+      setGlowEdges(true);
+    }, 600));
     // Phase 3 (2800ms): burst done, switch to breathing
-    setTimeout(() => { setGlowEdges(false); setEdgeBreathing(true); }, 2800);
+    gameTimeoutsRef.current.push(setTimeout(() => {
+      if (gameSessionRef.current !== session) return;
+      setGlowEdges(false); setEdgeBreathing(true);
+    }, 2800));
     // Phase 4 (3200ms): game starts (timer starts after pattern shown)
-    setTimeout(() => { startRound(1, 1); }, 3200);
+    gameTimeoutsRef.current.push(setTimeout(() => {
+      if (gameSessionRef.current !== session) return;
+      startRound(1, 1);
+    }, 3200));
   };
   const handleModeSelect = (mode) => {
     if (mode === gameMode) return;
@@ -1132,13 +1160,16 @@ export default function CubePatternGame() {
     setGameState("showing");
     const roundNum = round || currentRound;
     setMessage(`레벨 ${lvl} (${roundNum}/${cfg.rounds}) — 패턴을 기억하세요!`);
-    showPattern(p);
+    showPattern(p, gameSessionRef.current);
   };
-  const showPattern = (p) => {
+  const showPattern = (p, session) => {
     let i = 0;
     setShowIndex(-1);
     stopTimer();
+    if (showPatternIntervalRef.current) clearInterval(showPatternIntervalRef.current);
     const interval = setInterval(() => {
+      // Abort if game session changed (e.g. new game started or game over)
+      if (session !== undefined && session !== gameSessionRef.current) { clearInterval(interval); return; }
       if (i < p.length) {
         setShowIndex(i);
         setHighlightFace(p[i]);
@@ -1149,12 +1180,14 @@ export default function CubePatternGame() {
         i++;
       } else {
         clearInterval(interval);
+        showPatternIntervalRef.current = null;
         setShowIndex(-1);
         setGameState("input");
         setMessage("큐브를 돌려서 면을 터치하세요!");
         startTimer();
       }
     }, 500);
+    showPatternIntervalRef.current = interval;
   };
   const handleFaceClick = useCallback(
     (faceKey) => {
@@ -1176,6 +1209,8 @@ export default function CubePatternGame() {
         setTimeout(() => setShakeAnim(false), 500);
         if (newLives <= 0) {
           stopTimer();
+          clearRoundTimer();
+          clearGameTimeouts();
           playGameOverSound();
           setGameState("gameover");
           setGlowEdges(false);
@@ -1217,12 +1252,15 @@ export default function CubePatternGame() {
             });
           });
         } else {
+          clearRoundTimer();
+          const session = gameSessionRef.current;
           setMessage(`틀렸어요! ❤️ ${newLives}개 남음 — 다시 보여줄게요`);
           setPlayerInput([]);
-          setTimeout(() => {
+          gameTimeoutsRef.current.push(setTimeout(() => {
+            if (gameSessionRef.current !== session) return;
             setGameState("showing");
-            showPattern(pattern);
-          }, 1200);
+            showPattern(pattern, session);
+          }, 1200));
         }
         return;
       }
@@ -1242,8 +1280,11 @@ export default function CubePatternGame() {
             ? `🔥 ${newCombo}콤보! +${earned}점`
             : `정답! +${earned}점`
         );
+        clearRoundTimer();
         setGameState("correct");
-        setTimeout(() => {
+        const session = gameSessionRef.current;
+        gameTimeoutsRef.current.push(setTimeout(() => {
+          if (gameSessionRef.current !== session) return;
           const cfg = getLevelConfig(level);
           if (currentRound < cfg.rounds) {
             // Same level, next round
@@ -1257,7 +1298,10 @@ export default function CubePatternGame() {
             setLevel(nextLvl);
             setCurrentRound(1);
             setMessage(`🎉 레벨 ${level} 클리어!`);
-            setTimeout(() => startRound(nextLvl, 1), 800);
+            gameTimeoutsRef.current.push(setTimeout(() => {
+              if (gameSessionRef.current !== session) return;
+              startRound(nextLvl, 1);
+            }, 800));
           } else {
             // All 10 levels cleared!
             stopTimer();
@@ -1285,10 +1329,10 @@ export default function CubePatternGame() {
                 .then((hist) => { if (hist) setCognitiveHistory(hist); });
             }
           }
-        }, 1500);
+        }, 1500));
       }
     },
-    [gameState, playerInput, pattern, score, level, currentRound, lives, combo, bestScore, totalAttempts, correctAttempts, elapsedTime, gameMode, stopTimer, nickname, user]
+    [gameState, playerInput, pattern, score, level, currentRound, lives, combo, bestScore, totalAttempts, correctAttempts, elapsedTime, gameMode, stopTimer, clearRoundTimer, clearGameTimeouts, nickname, user]
   );
 
   // ─── Round timeout handler (keeps fresh closure via ref) ───
@@ -1303,6 +1347,7 @@ export default function CubePatternGame() {
     setTimeout(() => setShakeAnim(false), 500);
     if (newLives <= 0) {
       stopTimer();
+      clearGameTimeouts();
       setGameState("gameover");
       setGlowEdges(false);
       setEdgeBreathing(false);
@@ -1332,12 +1377,14 @@ export default function CubePatternGame() {
         fetchCognitiveFromDB(uid2).then((dbC) => { if (dbC.length > 0) { setCognitiveHistory(dbC); persistCognitiveLocal(dbC); } });
       });
     } else {
+      const session = gameSessionRef.current;
       setMessage(`⏰ 시간 초과! ❤️ ${newLives}개 남음 — 다시 보여줄게요`);
       setPlayerInput([]);
-      setTimeout(() => {
+      gameTimeoutsRef.current.push(setTimeout(() => {
+        if (gameSessionRef.current !== session) return;
         setGameState("showing");
-        showPattern(pattern);
-      }, 1200);
+        showPattern(pattern, session);
+      }, 1200));
     }
   };
 
