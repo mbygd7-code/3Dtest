@@ -461,6 +461,7 @@ function Cube3D({ rotX, rotY, onFaceClick, highlightFace, scale = 1, unfolded = 
     textTransform: "uppercase", userSelect: "none",
     WebkitUserSelect: "none",
     transition: "border 0.2s, box-shadow 0.2s",
+    WebkitTransform: "translateZ(0)",
   });
 
   const click = (key) => (e) => { e.stopPropagation(); onFaceClick && onFaceClick(key); };
@@ -475,14 +476,16 @@ function Cube3D({ rotX, rotY, onFaceClick, highlightFace, scale = 1, unfolded = 
       <span style={{
         fontSize: isNum ? s * 0.52 : s * 0.55,
         fontWeight: isNum ? 900 : 400,
-        color: "rgba(0,0,0,0.6)",
+        color: isNum ? "#000000" : "rgba(0,0,0,0.55)",
         pointerEvents: "none",
         userSelect: "none", WebkitUserSelect: "none",
         lineHeight: 1,
-        filter: isNum ? "none" : "brightness(0)",
-        opacity: isNum ? 1 : 0.55,
-        transform: needsFlip ? "rotate(180deg)" : "none",
+        transform: needsFlip ? "rotate(180deg) translateZ(0)" : "translateZ(0)",
         display: "inline-block",
+        position: "relative",
+        zIndex: 1,
+        WebkitFontSmoothing: "antialiased",
+        textRendering: "geometricPrecision",
       }}>{content}</span>
     );
   };
@@ -677,9 +680,13 @@ function ColorDot({ faceKey, size = 36, showLabel = false, dim = false, pulse = 
             fontSize: gameMode === "number" ? size * 0.55 : size * 0.5,
             fontWeight: gameMode === "number" ? 800 : 400,
             lineHeight: 1,
-            color: gameMode === "number" ? "rgba(255,255,255,0.95)" : undefined,
-            filter: gameMode !== "number" ? "brightness(0) invert(1)" : "none",
-            opacity: gameMode !== "number" ? 0.85 : 1,
+            color: gameMode === "number" ? "#ffffff" : "#ffffff",
+            opacity: gameMode !== "number" ? 0.85 : 0.95,
+            position: "relative",
+            zIndex: 1,
+            transform: "translateZ(0)",
+            WebkitFontSmoothing: "antialiased",
+            textRendering: "geometricPrecision",
           }}>{content}</span>
         )}
       </div>
@@ -2299,7 +2306,18 @@ export default function CubePatternGame() {
             const faceContent = (faceKey) => {
               const c = FACE_CONTENT[gameMode]?.[faceKey];
               if (!c) return null;
-              return <span style={{ fontSize: gameMode === "number" ? sz * 0.45 : sz * 0.5, fontWeight: gameMode === "number" ? 900 : 400, color: "rgba(0,0,0,0.5)", pointerEvents: "none" }}>{c}</span>;
+              return <span style={{
+                fontSize: gameMode === "number" ? sz * 0.45 : sz * 0.5,
+                fontWeight: gameMode === "number" ? 900 : 400,
+                color: "#000000",
+                opacity: 0.5,
+                pointerEvents: "none",
+                position: "relative",
+                zIndex: 1,
+                transform: "translateZ(0)",
+                WebkitFontSmoothing: "antialiased",
+                textRendering: "geometricPrecision",
+              }}>{c}</span>;
             };
             const faceStyle = (bg, tf) => ({
               position: "absolute", width: sz, height: sz,
