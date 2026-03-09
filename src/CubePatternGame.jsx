@@ -146,7 +146,29 @@ function calculateCompositeScore(score, timeMs, accuracy) {
 }
 
 // ─── D-Day calculation ───
+// ─── Event Reward: Coupon data for top 3 winners ───
+const EVENT_REWARD_DEADLINE = new Date("2026-03-30T09:00:00+09:00");
+const EVENT_COUPONS = {
+  1: [
+    { code: "7546 1192 6130 7574", order: "3271854177", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+    { code: "7509 1078 3802 9258", order: "3271854937", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+    { code: "7573 2047 8064 9807", order: "3271853193", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+  ],
+  2: [
+    { code: "7578 0934 3462 4355", order: "3271854938", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+    { code: "7538 7937 7122 9847", order: "3271854936", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+  ],
+  3: [
+    /* TODO: 3등 쿠폰 이미지 받으면 여기에 추가 */
+  ],
+};
+const REWARD_SEEN_KEY = "cubeEventRewardSeen";
+function isRewardSeen(userId) { return localStorage.getItem(`${REWARD_SEEN_KEY}_${userId}`) === "true"; }
+function markRewardSeen(userId) { localStorage.setItem(`${REWARD_SEEN_KEY}_${userId}`, "true"); }
+function isEventEnded() { return new Date() >= EVENT_REWARD_DEADLINE; }
+
 function getDDayCount() {
+  if (isEventEnded()) return 0;
   const event = new Date(2026, 2, 30); // 2026.03.30
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -806,6 +828,10 @@ export default function CubePatternGame() {
   const [cognitiveHistory, setCognitiveHistory] = useState([]);
   // Event modal
   const [showEventModal, setShowEventModal] = useState(true);
+  // Reward modal (after event ends)
+  const [showRewardModal, setShowRewardModal] = useState(false);
+  const [myRewardRank, setMyRewardRank] = useState(null);
+  const [copiedCode, setCopiedCode] = useState(null);
   const [showNumberGuide, setShowNumberGuide] = useState(false);
   const [showNumberArrow, setShowNumberArrow] = useState(false);
   const numberArrowTimerRef = useRef(null);
@@ -930,6 +956,25 @@ export default function CubePatternGame() {
       }
     })();
   }, [user]);
+
+  // ─── Check if user won the event reward ───
+  useEffect(() => {
+    if (!user || rankings.length === 0 || !isEventEnded()) return;
+    const uid = user.id;
+    const rankIdx = rankings.findIndex((r) => r.userId === uid);
+    if (rankIdx >= 0 && rankIdx < 3) {
+      const rank = rankIdx + 1;
+      const coupons = EVENT_COUPONS[rank];
+      if (coupons && coupons.length > 0) {
+        setMyRewardRank(rank);
+        // Auto-show reward modal if not seen yet
+        if (!isRewardSeen(uid)) {
+          setShowEventModal(false);
+          setShowRewardModal(true);
+        }
+      }
+    }
+  }, [user, rankings]);
 
   // ─── Fetch top 3 user avatars when rankings change ───
   useEffect(() => {
@@ -2508,6 +2553,26 @@ export default function CubePatternGame() {
                 >
                   🏆 랭킹
                 </button>
+                {/* Gift button for winners after event ends */}
+                {isEventEnded() && myRewardRank && (EVENT_COUPONS[myRewardRank] || []).length > 0 && (
+                  <button
+                    onClick={() => setShowRewardModal(true)}
+                    style={{
+                      padding: "10px 24px", fontSize: 13, fontWeight: 600,
+                      fontFamily: "'Outfit', sans-serif",
+                      background: "linear-gradient(135deg, rgba(255,215,0,0.15), rgba(255,140,66,0.1))",
+                      color: "#FFD93D",
+                      border: "1px solid rgba(255,215,0,0.25)",
+                      borderRadius: 50, cursor: "pointer",
+                      letterSpacing: 1, transition: "all 0.3s",
+                      WebkitAppearance: "none",
+                      WebkitTapHighlightColor: "transparent",
+                      animation: !isRewardSeen(user?.id) ? "eventPulse 2s ease-in-out infinite" : "none",
+                    }}
+                  >
+                    🎁 내 선물
+                  </button>
+                )}
               </div>
               {gameState === "gameover" ? (
                 <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -3452,6 +3517,191 @@ export default function CubePatternGame() {
             >
               🎮 지금 도전하기
             </button>
+          </div>
+        </div>
+      )}
+      {/* ─── REWARD MODAL (after event ends, for top 3 winners) ─── */}
+      {showRewardModal && myRewardRank && (
+        <div
+          onClick={() => { setShowRewardModal(false); markRewardSeen(user?.id); }}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+            background: "rgba(0,0,0,0.9)",
+            backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 1002, animation: "modalBackdropIn 0.25s ease-out",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            onTouchMove={(e) => e.stopPropagation()}
+            style={{
+              position: "relative", padding: "28px 20px 22px", textAlign: "center",
+              background: "linear-gradient(160deg, rgba(40,20,70,0.98) 0%, rgba(15,10,40,0.98) 100%)",
+              borderRadius: 24,
+              border: "1px solid rgba(255,215,0,0.2)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.8), 0 0 120px rgba(255,215,0,0.08)",
+              maxWidth: 400, width: "100%", maxHeight: "90vh",
+              display: "flex", flexDirection: "column",
+              animation: "modalFadeIn 0.4s cubic-bezier(0.34, 1.3, 0.64, 1)",
+              fontFamily: "'Outfit', sans-serif", color: "#fff",
+            }}
+          >
+            {/* Close */}
+            <button onClick={() => { setShowRewardModal(false); markRewardSeen(user?.id); }} style={{
+              position: "absolute", top: 12, right: 14,
+              background: "none", border: "none", color: "rgba(255,255,255,0.3)",
+              fontSize: 22, cursor: "pointer", lineHeight: 1, padding: 4, zIndex: 2,
+            }}>✕</button>
+
+            {/* Fixed header area */}
+            <div style={{ flexShrink: 0 }}>
+              {/* Celebration */}
+              <div style={{ fontSize: 52, marginBottom: 4, animation: "eventPulse 1.5s ease-in-out infinite" }}>🎉</div>
+              <div style={{
+                fontSize: 22, fontWeight: 900, marginBottom: 4,
+                background: "linear-gradient(135deg, #FFD93D, #FF8C42)",
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}>축하합니다!</div>
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginBottom: 12 }}>
+                CUBE PATTERN CHALLENGE 이벤트
+              </div>
+
+              {/* Rank badge */}
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 8,
+                padding: "8px 24px", borderRadius: 30,
+                background: myRewardRank === 1 ? "linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,180,0,0.1))" :
+                            myRewardRank === 2 ? "linear-gradient(135deg, rgba(192,192,192,0.2), rgba(160,160,160,0.1))" :
+                            "linear-gradient(135deg, rgba(205,127,50,0.2), rgba(180,100,30,0.1))",
+                border: `1px solid ${myRewardRank === 1 ? "rgba(255,215,0,0.3)" : myRewardRank === 2 ? "rgba(192,192,192,0.3)" : "rgba(205,127,50,0.3)"}`,
+                marginBottom: 16,
+              }}>
+                <span style={{ fontSize: 26 }}>{myRewardRank === 1 ? "🥇" : myRewardRank === 2 ? "🥈" : "🥉"}</span>
+                <span style={{
+                  fontSize: 20, fontWeight: 900,
+                  color: myRewardRank === 1 ? "#FFD93D" : myRewardRank === 2 ? "#C0C0C0" : "#CD7F32",
+                }}>{myRewardRank}등</span>
+              </div>
+
+              <div style={{
+                fontSize: 14, color: "rgba(255,255,255,0.7)", marginBottom: 16, lineHeight: 1.6,
+              }}>
+                🎁 스타벅스 커피 쿠폰 <span style={{ color: "#FFD93D", fontWeight: 800 }}>{(EVENT_COUPONS[myRewardRank] || []).length}장</span>이 도착했습니다!
+              </div>
+            </div>
+
+            {/* Scrollable coupon list */}
+            <div style={{
+              flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
+              display: "flex", flexDirection: "column", gap: 12,
+              paddingBottom: 8, paddingRight: 2,
+            }}>
+              {(EVENT_COUPONS[myRewardRank] || []).map((coupon, ci) => (
+                <div key={ci} style={{
+                  background: "linear-gradient(135deg, #ffffff 0%, #f8f4e8 100%)",
+                  borderRadius: 16, padding: "18px 16px 14px",
+                  border: "1px solid rgba(255,215,0,0.3)",
+                  boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+                  textAlign: "center", position: "relative",
+                  animation: `eventSlideUp 0.5s ease-out ${0.2 + ci * 0.15}s both`,
+                }}>
+                  {/* Starbucks header */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ textAlign: "left" }}>
+                      <div style={{ fontSize: 11, color: "#666", fontWeight: 600 }}>스타벅스</div>
+                      <div style={{ fontSize: 15, color: "#1a1a1a", fontWeight: 800 }}>{coupon.product}</div>
+                    </div>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: "50%",
+                      background: "#00704A", display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 18, color: "#fff", fontWeight: 900,
+                    }}>☕</div>
+                  </div>
+
+                  {/* Barcode area */}
+                  <div style={{
+                    background: "#fff", borderRadius: 8, padding: "12px 8px",
+                    border: "1px solid #e0d8c0", marginBottom: 10,
+                  }}>
+                    {/* Barcode bars visual */}
+                    <div style={{
+                      display: "flex", justifyContent: "center", gap: 1, marginBottom: 8, height: 50,
+                    }}>
+                      {coupon.code.replace(/\s/g, "").split("").map((ch, bi) => {
+                        const w = ((parseInt(ch) % 3) + 1);
+                        return <div key={bi} style={{
+                          width: w, height: "100%",
+                          background: bi % 3 === 0 ? "#000" : bi % 2 === 0 ? "#333" : "#000",
+                          borderRadius: 0.5,
+                        }} />;
+                      })}
+                    </div>
+                    <div style={{
+                      fontSize: 18, fontWeight: 800, color: "#1a1a1a",
+                      letterSpacing: 3, fontFamily: "'Courier New', monospace",
+                    }}>{coupon.code}</div>
+                  </div>
+
+                  {/* Details */}
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "#888", padding: "0 4px" }}>
+                    <span>유효기간: {coupon.expiry}</span>
+                    <span>주문번호: {coupon.order}</span>
+                  </div>
+
+                  {/* Copy button */}
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(coupon.code).then(() => {
+                        setCopiedCode(coupon.code);
+                        setTimeout(() => setCopiedCode(null), 2000);
+                      }).catch(() => {
+                        // Fallback for mobile
+                        const ta = document.createElement("textarea");
+                        ta.value = coupon.code;
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand("copy");
+                        document.body.removeChild(ta);
+                        setCopiedCode(coupon.code);
+                        setTimeout(() => setCopiedCode(null), 2000);
+                      });
+                    }}
+                    style={{
+                      marginTop: 10, padding: "8px 20px", borderRadius: 10,
+                      background: copiedCode === coupon.code ? "#00C9A7" : "linear-gradient(135deg, #00704A, #006241)",
+                      border: "none", color: "#fff", fontSize: 12, fontWeight: 700,
+                      cursor: "pointer", transition: "all 0.3s",
+                      WebkitAppearance: "none", WebkitTapHighlightColor: "transparent",
+                    }}
+                  >
+                    {copiedCode === coupon.code ? "✓ 복사완료!" : "📋 쿠폰번호 복사"}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{ flexShrink: 0, marginTop: 14 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", marginBottom: 12, lineHeight: 1.5 }}>
+                💡 스크린샷을 찍어 저장하거나 쿠폰번호를 복사해서<br/>스타벅스 매장에서 사용해주세요!
+              </div>
+              <button
+                onClick={() => { setShowRewardModal(false); markRewardSeen(user?.id); }}
+                style={{
+                  width: "100%", padding: "14px 0", borderRadius: 16,
+                  background: "linear-gradient(135deg, #FFD93D, #FF8C42)",
+                  border: "none", color: "#1a1a1a", fontSize: 15, fontWeight: 800,
+                  cursor: "pointer", letterSpacing: 1,
+                  boxShadow: "0 6px 24px rgba(255,215,0,0.3)",
+                }}
+              >
+                🎁 선물 받기 완료
+              </button>
+            </div>
           </div>
         </div>
       )}
