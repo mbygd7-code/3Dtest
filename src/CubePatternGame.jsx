@@ -150,16 +150,16 @@ function calculateCompositeScore(score, timeMs, accuracy) {
 const EVENT_REWARD_DEADLINE = new Date("2026-03-30T09:00:00+09:00");
 const EVENT_COUPONS = {
   1: [
-    { code: "7546 1192 6130 7574", order: "3271854177", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
-    { code: "7509 1078 3802 9258", order: "3271854937", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
-    { code: "7573 2047 8064 9807", order: "3271853193", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+    { code: "7546 1192 6130 7574", order: "3271854177", expiry: "2027년 3월 8일", product: "카페 아메리카노 T", image: "/coupons/coupon1.jpg" },
+    { code: "7509 1078 3802 9258", order: "3271854937", expiry: "2027년 3월 8일", product: "카페 아메리카노 T", image: "/coupons/coupon2.jpg" },
+    { code: "7573 2047 8064 9807", order: "3271853193", expiry: "2027년 3월 8일", product: "카페 아메리카노 T", image: "/coupons/coupon3.jpg" },
   ],
   2: [
-    { code: "7578 0934 3462 4355", order: "3271854938", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
-    { code: "7538 7937 7122 9847", order: "3271854936", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+    { code: "7578 0934 3462 4355", order: "3271854938", expiry: "2027년 3월 8일", product: "카페 아메리카노 T", image: "/coupons/coupon4.jpg" },
+    { code: "7538 7937 7122 9847", order: "3271854936", expiry: "2027년 3월 8일", product: "카페 아메리카노 T", image: "/coupons/coupon5.jpg" },
   ],
   3: [
-    { code: "7547 3923 9042 6859", order: "3271854178", expiry: "2027년 3월 8일", product: "카페 아메리카노 T" },
+    { code: "7547 3923 9042 6859", order: "3271854178", expiry: "2027년 3월 8일", product: "카페 아메리카노 T", image: "/coupons/coupon6.jpg" },
   ],
 };
 const REWARD_SEEN_KEY = "cubeEventRewardSeen";
@@ -167,122 +167,26 @@ function isRewardSeen(userId) { return localStorage.getItem(`${REWARD_SEEN_KEY}_
 function markRewardSeen(userId) { localStorage.setItem(`${REWARD_SEEN_KEY}_${userId}`, "true"); }
 function isEventEnded() { return new Date() >= EVENT_REWARD_DEADLINE; }
 
-// ─── Generate coupon card image via Canvas & trigger download ───
+// ─── Download actual coupon image ───
 function downloadCouponImage(coupon, index) {
-  const W = 750, H = 1050;
-  const canvas = document.createElement("canvas");
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext("2d");
-
-  // Background — warm white card
-  ctx.fillStyle = "#FFFBEF";
-  ctx.beginPath();
-  const rr = 30;
-  ctx.moveTo(rr, 0); ctx.lineTo(W - rr, 0); ctx.quadraticCurveTo(W, 0, W, rr);
-  ctx.lineTo(W, H - rr); ctx.quadraticCurveTo(W, H, W - rr, H);
-  ctx.lineTo(rr, H); ctx.quadraticCurveTo(0, H, 0, H - rr);
-  ctx.lineTo(0, rr); ctx.quadraticCurveTo(0, 0, rr, 0);
-  ctx.closePath(); ctx.fill();
-
-  // Top colored band
-  const grd = ctx.createLinearGradient(0, 0, W, 0);
-  grd.addColorStop(0, "#FFD93D"); grd.addColorStop(1, "#FFC107");
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, W, 320);
-  // Round top corners
-  ctx.fillStyle = "#FFFBEF";
-  ctx.fillRect(0, 280, W, 60);
-  ctx.fillStyle = grd;
-  ctx.beginPath();
-  ctx.moveTo(0, 280); ctx.lineTo(W, 280);
-  ctx.lineTo(W, 320); ctx.quadraticCurveTo(W, 280, W - 40, 280);
-  ctx.lineTo(40, 280); ctx.quadraticCurveTo(0, 280, 0, 320);
-  ctx.closePath(); ctx.fill();
-
-  // Coffee cup icon (circle)
-  ctx.fillStyle = "#FFFBEF";
-  ctx.beginPath(); ctx.arc(W / 2, 180, 70, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#00704A";
-  ctx.beginPath(); ctx.arc(W / 2, 180, 55, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#fff"; ctx.font = "bold 40px Arial"; ctx.textAlign = "center";
-  ctx.fillText("☕", W / 2, 196);
-
-  // Brand name
-  ctx.fillStyle = "#555"; ctx.font = "500 26px 'Helvetica Neue', Arial, sans-serif";
-  ctx.textAlign = "left"; ctx.fillText("스타벅스", 55, 370);
-
-  // Product name
-  ctx.fillStyle = "#1a1a1a"; ctx.font = "bold 38px 'Helvetica Neue', Arial, sans-serif";
-  ctx.fillText(coupon.product, 55, 418);
-
-  // Starbucks circle logo (right side)
-  ctx.fillStyle = "#00704A";
-  ctx.beginPath(); ctx.arc(W - 85, 390, 35, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = "#fff"; ctx.font = "bold 28px Arial"; ctx.textAlign = "center";
-  ctx.fillText("☕", W - 85, 400);
-
-  // Divider
-  ctx.strokeStyle = "#e0d8c0"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(55, 450); ctx.lineTo(W - 55, 450); ctx.stroke();
-
-  // Barcode area background
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(55, 475, W - 110, 190);
-  ctx.strokeStyle = "#e0d8c0"; ctx.lineWidth = 1;
-  ctx.strokeRect(55, 475, W - 110, 190);
-
-  // Barcode bars
-  const digits = coupon.code.replace(/\s/g, "");
-  const barStartX = 100, barW = W - 200, barH = 100, barY = 500;
-  const barCount = digits.length * 4;
-  for (let i = 0; i < barCount; i++) {
-    const digitIdx = Math.floor(i / 4);
-    const d = parseInt(digits[digitIdx]) || 0;
-    const w = (d % 3 === 0) ? 3 : (d % 2 === 0) ? 2 : 1.5;
-    const x = barStartX + (i / barCount) * barW;
-    if (i % 2 === 0) {
-      ctx.fillStyle = "#000";
-      ctx.fillRect(x, barY, w, barH);
-    }
-  }
-
-  // Coupon code number
-  ctx.fillStyle = "#1a1a1a"; ctx.font = "bold 42px 'Courier New', monospace";
-  ctx.textAlign = "center"; ctx.fillText(coupon.code, W / 2, 640);
-
-  // Divider
-  ctx.strokeStyle = "#e0d8c0"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(55, 700); ctx.lineTo(W - 55, 700); ctx.stroke();
-
-  // Details rows
-  const rows = [
-    { label: "교환처", value: "스타벅스" },
-    { label: "유효기간", value: coupon.expiry },
-    { label: "주문번호", value: coupon.order },
-  ];
-  rows.forEach((row, i) => {
-    const y = 745 + i * 60;
-    ctx.fillStyle = "#888"; ctx.font = "400 24px 'Helvetica Neue', Arial, sans-serif";
-    ctx.textAlign = "left"; ctx.fillText(row.label, 70, y);
-    ctx.fillStyle = "#333"; ctx.font = "600 24px 'Helvetica Neue', Arial, sans-serif";
-    ctx.textAlign = "right"; ctx.fillText(row.value, W - 70, y);
-    if (i < rows.length - 1) {
-      ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(55, y + 25); ctx.lineTo(W - 55, y + 25); ctx.stroke();
-    }
-  });
-
-  // Footer
-  ctx.fillStyle = "#aaa"; ctx.font = "400 20px Arial"; ctx.textAlign = "center";
-  ctx.fillText("Cube Pattern Challenge 이벤트 경품", W / 2, H - 40);
-
-  // Download
-  const link = document.createElement("a");
-  link.download = `starbucks_coupon_${index + 1}.png`;
-  link.href = canvas.toDataURL("image/png");
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  if (!coupon.image) return;
+  // Fetch the actual coupon image and trigger download
+  fetch(coupon.image)
+    .then((res) => res.blob())
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.download = `starbucks_coupon_${index + 1}.jpg`;
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    })
+    .catch(() => {
+      // Fallback: open image in new tab
+      window.open(coupon.image, "_blank");
+    });
 }
 
 function getDDayCount() {
